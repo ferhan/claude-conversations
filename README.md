@@ -54,7 +54,8 @@ In the transcript each `thread-item` block is drawn as one line, `[+] thread-ite
 - The model replies `[thread:<id>] resolved` after acting on it, or `[thread:<id>] stale` when the decision was already settled.
 - `[thread:<id>] withdrawn <key>` on its own line retires a decision; a bare `withdrawn <key>` before any tag retires a "No thread" one.
 - `[thread:<id>] closed` on its own line closes the thread.
-- Re-emitting a decision with the same `key` and the same options keeps its answer; new options reopen it.
+- A card's `dismiss` button drops a decision you do not want to answer: it is marked withdrawn, no prompt is sent, and it stays dismissed for the session.
+- Re-emitting a decision with the same `key` and the same options keeps its answer or dismissal; new options reopen it.
 
 ### Agent reports
 
@@ -70,6 +71,7 @@ When a `kind: thread` item has an `agent` field equal to the `description` given
 | `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`), plus `No thread  [● N open]` for open untagged decisions |
 | `/thread new <message>` | Create and select a thread titled by the message, and put `[thread:<id>] <message>` in the prompt |
 | `/thread close <ids>` | Close one or more threads (`/thread <id> close` also works) |
+| `/thread close none` | Dismiss every open "No thread" decision (`/thread close no-thread` also works) |
 | `/thread show-band`, `/thread hide-band` | Show or hide the band |
 | `/thread view`, `/thread show-view`, `/thread hide-view` | Open the pane on the needs-you list, or close it |
 

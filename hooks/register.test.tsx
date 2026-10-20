@@ -688,3 +688,59 @@ test('No thread: the band shows a row for open untagged decisions, not the empty
   await band.unmount()
   expect(await run('list')).toBe('No threads.')
 })
+
+test('dismiss: hides the card, sends nothing, survives a re-register; close none clears the No-thread group; new options reopen', async ($, on) => {
+  const sent: string[] = []
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+  on('ui.notify', () => ({ value: {} }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  let rows: { role: string; text: string; toolUses: unknown[] }[] = [{ role: 'assistant', text: LOOSE, toolUses: [] }]
+  await start($, on, () => rows as never)
+  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
+  const reload = () => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  let pane = await $.ui.mount(PANE)
+  expect((await pane.find({ key: 'dismiss::g1' }))?.text).toBe('dismiss')
+  await pane.press({ key: 'dismiss::g1' })
+  expect(await pane.find({ key: 'opt::g1:a' })).toBeUndefined()
+  expect(await pane.find({ key: 'opt::g2:a' })).toBeDefined()
+  await pane.unmount()
+  expect(sent).toEqual([])
+  await reload()
+  expect(await run('list')).toBe('- No thread  [● 1 open]')
+
+  expect(await run('close none')).toBe('No-thread decisions dismissed (1).')
+  expect(await run('list')).toBe('No threads.')
+  let band = await $.ui.mount(BAND)
+  expect(await band.find({ key: 'loose' })).toBeUndefined()
+  await band.unmount()
+  await reload()
+  expect(await run('list')).toBe('No threads.')
+  expect(await run('close no-thread')).toBe('No-thread decisions dismissed (0).')
+
+  // The model asks g1 again with new options: it reopens, live and after a reload.
+  const again = DECISION.replace('key: k1', 'key: g1').replace('  - b: No', '  - c: Later')
+  await reply($, `Asking again.\n${again}`)
+  expect(await run('list')).toBe('- No thread  [● 1 open]')
+  rows = [...rows, { role: 'assistant', text: `Asking again.\n${again}`, toolUses: [] }]
+  await reload()
+  expect(await run('list')).toBe('- No thread  [● 1 open]')
+  band = await $.ui.mount(BAND)
+  expect(await band.find({ key: 'loose' })).toBeDefined()
+  await band.unmount()
+  expect(sent).toEqual([])
+})
+
+test('dismiss: works on a thread card in the thread view', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  await start($, on)
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'dismiss:a:k1' })
+  expect(await pane.find({ key: 'opt:a:k1:a' })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /^needs answer$/ })).toBeUndefined()
+  await pane.unmount()
+})

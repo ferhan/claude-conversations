@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ThreadCard, Thread } from '../types'
-import { apply, delivery, file, gist, label, labelled, learn, mint, parts, rebuild, relabel, tagOf } from './parse'
+import { apply, delivery, file, WITHDRAWN, gist, label, labelled, learn, mint, parts, rebuild, relabel, tagOf } from './parse'
 
 const PANE = 'thread-pane'
 const threads = atom({ plugin: 'conversations', key: 'threads' } as const, [])
@@ -33,6 +33,19 @@ const closeThreads = async ($: EngineInterface, ids: string[]) => {
 }
 const expanded = atom({ plugin: 'conversations', key: 'expanded' } as const, {}) // `<message id>:<part index>` of thread-item blocks drawn open
 const active = atom({ plugin: 'conversations', key: 'active' } as const, false) // the operator used threads: a /thread command or a tagged prompt
+// Operator dismissals: not in the transcript, so applied after every rebuild. Kept with the options they were
+// dismissed with, so a re-emit with new options reopens the decision (as for a model's `withdrawn`).
+const dismissed = atom({ plugin: 'conversations', key: 'dismissed' } as const, {})
+const sig = (c: ThreadCard) => JSON.stringify(c.options)
+const withDismissals = (list: Thread[], d: Record<string, string>) =>
+  list.map(t => ({ ...t, cards: t.cards.map(c => (c.answered === null && d[`${t.id}:${c.key}`] === sig(c) ? { ...c, answered: WITHDRAWN } : c)) }))
+// Drop open decisions without answering them: no prompt is sent. Returns how many were open.
+const dismiss = async ($: EngineInterface, pick: (t: Thread, c: ThreadCard) => boolean) => {
+  const hit = (await read($, threads)).flatMap(t => t.cards.filter(c => c.answered === null && pick(t, c)).map(c => [`${t.id}:${c.key}`, sig(c)] as const))
+  await update($, dismissed, m => ({ ...m, ...Object.fromEntries(hit) }))
+  await update($, threads, l => withDismissals(l, Object.fromEntries(hit)))
+  return hit.length
+}
 const collapsed = atom({ plugin: 'conversations', key: 'collapsed' } as const, false)
 
 // What the coordinator (the main session's model) is told about the protocol.
@@ -80,11 +93,11 @@ const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sec
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | show-band | hide-band | view | show-view | hide-view]' })
+    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | close none | show-band | hide-band | view | show-view | hide-view]' })
     // --resume: rebuild threads from the tagged user and assistant rows already in the transcript.
     const shut = await read($, closedIds)
     const rows = await $.session.messages()
-    const list = rebuild(rows).map(t => (shut[t.id] ? { ...t, closed: true } : t))
+    const list = withDismissals(rebuild(rows), await read($, dismissed)).map(t => (shut[t.id] ? { ...t, closed: true } : t))
     await update($, threads, () => list)
     // --resume: an operator prompt tagged earlier in the transcript means threads were in use.
     if (rows.some(m => m.role === 'user' && tagOf(m.text) !== null && !delivery(m.text))) await update($, active, () => true)
@@ -191,6 +204,8 @@ export const register: Register = on => {
       return { text: `Thread ${label(id)} started: press Enter to send.` }
     }
     const words = arg.split(/\s+/)
+    if (words[0] === 'close' && words.length === 2 && (words[1] === 'none' || words[1] === 'no-thread'))
+      return { text: `No-thread decisions dismissed (${await dismiss($, t => t.id === '')}).` }
     // `/thread close a b`, or `/thread a close` as first typed.
     const ids = words[0] === 'close' ? words.slice(1) : words[1] === 'close' && words.length === 2 ? [words[0]!] : null
     if (ids) {
@@ -322,6 +337,7 @@ export const register: Register = on => {
                     onPress={decide(t, c, o)}
                   />
                 ))}
+                <Button key={`dismiss:${t.id}:${c.key}`} label="dismiss" onPress={() => dismiss($, (x, y) => x.id === t.id && y.key === c.key)} />
               </Box>
             </Box>
           ))}
