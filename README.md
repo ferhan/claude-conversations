@@ -1,6 +1,11 @@
-# conversations
+# Conversation threads for Claude CLI
 
-A Claude Code plugin that splits one conversation into threads. Prompts and replies carry a thread tag, decisions the model asks for show as cards with option buttons, a band above the prompt lists the open threads, and a pane lists what needs you.
+Often times when working with multiple agents and responding prompts from them, or signing them up for follow-on work, the user can end up with interlaced answers from multiple agents. The same is valid when running multiple bash commands that can complete at different order, etc. 
+This behavior of interlaced options, analysis results, report-outs, can create the need to scroll up and down the CLI window constantly, which can be tedious as it is not the most precise operation and leads to jumping over things in text.
+
+This repo implements a Claude Code plugin that splits one conversation into threads. Prompts and replies carry a thread tag, decisions the model asks for show as cards with option buttons, a band above the prompt lists the open threads, and a pane lists what needs you.
+
+You can as easily continue working in your current mode in single CLI, or take advantage of the plugin's views and quick access to questions waiting for you, without having to learn shortcuts, new methods or change your workflow. This is not an agent launching, session tracking plugin. It just organizes your current flow of information in your current session.
 
 ## How it works
 
