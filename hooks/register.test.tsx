@@ -291,8 +291,8 @@ test('pane: an untagged decision shows under "No thread" and answers with an unt
   await ui.press({ key: 'opt::g:a' })
   expect(sent).toEqual(['decide: g a (Yes)'])
   await ui.unmount()
-  const band = await $.ui.mount(BAND) // no thread row: the band hands the drawing to the engine
-  expect((await band.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+  const band = await $.ui.mount(BAND) // no thread row: the empty-band hint
+  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
   await band.unmount()
 })
 
@@ -401,7 +401,7 @@ test('/thread close: hides threads from band, list status and pane, survives a r
     expect((await pane.find({ type: 'Text', text: /Nothing needs you/ }))?.text).toBe('Nothing needs you.')
     await pane.unmount()
     const band = await $.ui.mount(BAND) // no open thread and none selected: the band steps aside
-    expect((await band.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+    expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
     await band.unmount()
   }
   await check()
@@ -504,4 +504,27 @@ test('pane: Close thread in the thread view only; it closes like /thread close a
   await band.unmount()
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   expect(await closed()).toEqual([false, true, true])
+})
+
+test('band: the empty-band hint shows with no threads, not when hidden, not once a thread exists', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('prompt.fill', () => ({ isFilled: true }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  await start($, on, () => [])
+  const run = (args: string) => $.command.run({ command: 'thread', args, ...RUN })
+  const text = async () => {
+    const ui = await $.ui.mount(BAND)
+    const t = (await ui.findAll({ type: 'Text' })).map(x => x.text)
+    await ui.unmount()
+    return t
+  }
+  expect(await text()).toEqual(['No threads · /thread new <message> to start one'])
+  await run('hide-band')
+  expect(await text()).toEqual(['engine'])
+  await run('show-band')
+  await run('new first')
+  expect((await text()).some(t => t.startsWith('No threads'))).toBe(false)
 })

@@ -195,8 +195,10 @@ export const register: Register = on => {
     const list = all.filter(t => !t.closed)
     const nClosed = all.length - list.length
     const id = await read($, selected)
-    if (e.props.hasSurvey || (await read($, bandHidden)) || (list.length === 0 && !id)) return next(e)
+    if (e.props.hasSurvey || (await read($, bandHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
+    // One line, so no rule row above it.
+    if (list.length === 0 && !id) return <Text dimColor>No threads · /thread new &lt;message&gt; to start one</Text>
     const seen = await read($, acked)
     const toggle = () => update($, collapsed, c => !c)
     if (await read($, collapsed)) {
