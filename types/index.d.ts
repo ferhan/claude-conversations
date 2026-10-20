@@ -21,6 +21,6 @@ export type Thread = {
 
 declare module 'claude-code' {
   interface PluginState {
-    conversations: { threads: Thread[]; selected: string | null; shown: string | null; acked: Record<string, number>; collapsed: boolean; closedIds: Record<string, true>; bandHidden: boolean; expanded: Record<string, true> } // closedIds: threads the operator closed with /thread close // acked: thread id -> sections.length when the operator marked it seen
+    conversations: { threads: Thread[]; selected: string | null; shown: string | null; acked: Record<string, number>; collapsed: boolean; closedIds: Record<string, true>; bandHidden: boolean; expanded: Record<string, true>; active: boolean } // closedIds: threads the operator closed with /thread close // acked: thread id -> sections.length when the operator marked it seen
   }
 }

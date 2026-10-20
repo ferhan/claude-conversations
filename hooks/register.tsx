@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ThreadCard, Thread } from '../types'
-import { apply, file, gist, label, learn, mint, parts, rebuild, tagOf } from './parse'
+import { apply, delivery, file, gist, label, labelled, learn, mint, parts, rebuild, relabel, tagOf } from './parse'
 
 const PANE = 'thread-pane'
 const threads = atom({ plugin: 'conversations', key: 'threads' } as const, [])
@@ -32,6 +32,7 @@ const closeThreads = async ($: EngineInterface, ids: string[]) => {
   return known
 }
 const expanded = atom({ plugin: 'conversations', key: 'expanded' } as const, {}) // `<message id>:<part index>` of thread-item blocks drawn open
+const active = atom({ plugin: 'conversations', key: 'active' } as const, false) // the operator used threads: a /thread command or a tagged prompt
 const collapsed = atom({ plugin: 'conversations', key: 'collapsed' } as const, false)
 
 // What the coordinator (the main session's model) is told about the protocol.
@@ -79,16 +80,22 @@ const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sec
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | show-band | hide-band | show-view | hide-view]' })
+    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | show-band | hide-band | view | show-view | hide-view]' })
     // --resume: rebuild threads from the tagged user and assistant rows already in the transcript.
     const shut = await read($, closedIds)
-    const list = rebuild(await $.session.messages()).map(t => (shut[t.id] ? { ...t, closed: true } : t))
+    const rows = await $.session.messages()
+    const list = rebuild(rows).map(t => (shut[t.id] ? { ...t, closed: true } : t))
     await update($, threads, () => list)
+    // --resume: an operator prompt tagged earlier in the transcript means threads were in use.
+    if (rows.some(m => m.role === 'user' && tagOf(m.text) !== null && !delivery(m.text))) await update($, active, () => true)
     return next(e)
   })
 
   on('prompt.compose', async ($, e, next) => {
     const r = await next(e)
+    // Only once the operator uses threads; `active` is never cleared, so the prompt cache breaks once. A model's own
+    // thread-item block does not turn it on: without the instructions it should not write one.
+    if (!(await read($, active))) return r
     return { sections: [...r.sections, { id: 'conversations:coordinator', text: COORDINATOR, scope: 'session' as const }] }
   })
 
@@ -96,6 +103,7 @@ export const register: Register = on => {
     if (e.command) return next(e)
     const own = OWN.includes(e.origin.kind)
     const tag = tagOf(e.text)
+    if (tag !== null && own) await update($, active, () => true)
     if (tag !== null) {
       if (own && (await read($, threads)).some(t => t.id === tag && t.closed)) await setClosed($, [tag], false)
       return next(e)
@@ -116,6 +124,7 @@ export const register: Register = on => {
     }
     const id = await read($, selected)
     if (!id) return next(e)
+    await update($, active, () => true)
     if ((await read($, threads)).some(t => t.id === id && t.closed)) await setClosed($, [id], false)
     await update($, threads, l => l.map(t => (t.id === id && !t.title ? { ...t, title: e.text.split('\n')[0]! } : t))) // whole first line: the band and list cut it to their width
     if (await isOpen($)) await openPane($) // retitle
@@ -134,6 +143,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'thread' }, async ($, e) => {
+    await update($, active, () => true)
     const raw = e.args.trim()
     const arg = raw.toLowerCase()
     if (!arg) {
@@ -149,7 +159,7 @@ export const register: Register = on => {
       // No API expands a band the engine collapsed (its `[-]`, ctrl+x ctrl+a): only the person can.
       return { text: arg === 'hide-band' ? 'Band hidden.' : 'Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.' }
     }
-    if (arg === 'show-view') {
+    if (arg === 'show-view' || arg === 'view') {
       await update($, shown, () => null)
       await openPane($)
       return { text: 'View shown.' }
@@ -163,10 +173,14 @@ export const register: Register = on => {
       return { text: 'Prompts go untagged.' }
     }
     if (arg === 'list') {
-      const all = (await read($, threads)).filter(t => t.id)
+      const every = await read($, threads)
+      const all = every.filter(t => t.id)
       const room = Math.max(10, e.presentation.columns - 30)
+      const loose = every.find(t => !t.id)?.cards.filter(c => c.answered === null).length ?? 0
       // The row is markdown: bare newlines are soft breaks that join into one paragraph, so one list item per thread.
-      return { text: all.map(t => `- Thread ${label(t.id)}  ${cut(t.title || 'untitled', room)}  [${t.closed ? 'closed' : pending(t) ? '●' : t.cards.length ? 'answered' : 'open'}]`).join('\n') || 'No threads.' }
+      const lines = all.map(t => `- Thread ${label(t.id)}  ${cut(t.title || 'untitled', room)}  [${t.closed ? 'closed' : pending(t) ? '●' : t.cards.length ? 'answered' : 'open'}]`)
+      if (loose) lines.push(`- No thread  [● ${loose} open]`)
+      return { text: lines.join('\n') || 'No threads.' }
     }
     if (arg === 'new' || arg.startsWith('new ')) {
       const text = raw.slice(3).trim()
@@ -192,18 +206,21 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const all = (await read($, threads)).filter(t => t.id)
+    const every = await read($, threads)
+    const all = every.filter(t => t.id)
     const list = all.filter(t => !t.closed)
+    const loose = every.some(t => !t.id && pending(t)) // open "No thread" decisions
     const nClosed = all.length - list.length
     const id = await read($, selected)
     if (e.props.hasSurvey || (await read($, bandHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
+    const view = async () => (await update($, shown, () => null), openPane($))
     // One line, so no rule row above it.
-    if (list.length === 0 && !id) return <Text dimColor>No threads · /thread new &lt;message&gt; to start one</Text>
+    if (list.length === 0 && !id && !loose) return <Text dimColor>No threads · /thread new &lt;message&gt; to start one</Text>
     const seen = await read($, acked)
     const toggle = () => update($, collapsed, c => !c)
     if (await read($, collapsed)) {
-      const nAsk = list.filter(pending).length
+      const nAsk = list.filter(pending).length + (loose ? 1 : 0)
       const nNew = list.filter(t => unseen(t, seen)).length
       return (
         <Box flexDirection="row" columnGap={1}>
@@ -232,18 +249,20 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor>{'─'.repeat(e.props.bodyColumns)}</Text>
-        {list.map((t, i) => (
-          <Box key={`line:${t.id}`} flexDirection="row" columnGap={1}>
-            <Box width={TOGGLE} flexShrink={0}>
-              {i === 0 ? <Button key="collapse" label="−" onPress={toggle} /> : null}
+        {[...list.map((t, i) => [t.id, row(t, i)] as const), ...(loose ? [['', <Button key="loose" label="No thread  needs answer" onPress={view} />] as const] : [])].map(
+          ([k, el], i) => (
+            <Box key={`line:${k}`} flexDirection="row" columnGap={1}>
+              <Box width={TOGGLE} flexShrink={0}>
+                {i === 0 ? <Button key="collapse" label="−" onPress={toggle} /> : null}
+              </Box>
+              {el}
             </Box>
-            {row(t, i)}
-          </Box>
-        ))}
+          ),
+        )}
         <Box flexDirection="row" columnGap={1}>
           <Button key="none" label="none" variant={id ? undefined : 'primary'} onPress={() => select($, null)} />
           <Text dimColor>·</Text>
-          <Button key="view" label="view" onPress={async () => (await update($, shown, () => null), openPane($))} />
+          <Button key="view" label="view" onPress={view} />
           {nClosed > 0 ? <Text dimColor>+{nClosed} closed</Text> : null}
         </Box>
       </Box>
@@ -322,12 +341,13 @@ export const register: Register = on => {
     )
   })
 
-  // A reply's thread-item blocks draw as one line each, `[+] thread-item: <title>`, opened in place on a press.
-  // Only the drawing changes: the stored reply, what the model reads, keeps the block.
+  // Transcript drawing only; the stored reply, what the model reads, keeps every tag and block.
+  // A reply: each thread-item block as one line, `[+] thread-item: <title>`, opened in place on a press; a line-leading
+  // `[thread:<id>]` as a dim `Thread AB ·` label; a tag-and-protocol-word line as one dim line. Untagged, block-less replies pass.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (e.props.isSummary) return next(e)
-    const ps = parts(e.props.text)
-    if (!ps.some(p => 'block' in p)) return next(e)
+    const ps = parts(e.props.text).map(p => ('block' in p ? p : labelled(p.text)))
+    if (!ps.some(p => 'block' in p || p.some(s => s.id))) return next(e)
     const { Box, Button, Markdown, Text } = $.ui.resolve(e)
     const open = await read($, expanded)
     const toggle = (k: string) => () =>
@@ -339,20 +359,40 @@ export const register: Register = on => {
       })
     return (
       <Box flexDirection="column">
-        {ps.map((p, i) => {
-          if (!('block' in p)) return <Markdown key={`text:${i}`} text={p.text} />
+        {ps.flatMap((p, i) => {
+          if (Array.isArray(p))
+            return p.map((s, j) =>
+              s.verb ? (
+                <Text key={`verb:${i}:${j}`} dimColor>{`Thread ${label(s.id!)} · ${s.text}`}</Text>
+              ) : s.id ? (
+                <Box key={`sec:${i}:${j}`} flexDirection="row" columnGap={1}>
+                  <Text dimColor>{`Thread ${label(s.id)} ·`}</Text>
+                  <Box flexShrink={1} flexDirection="column">
+                    <Markdown key={`text:${i}:${j}`} text={s.text} />
+                  </Box>
+                </Box>
+              ) : (
+                <Markdown key={`text:${i}:${j}`} text={s.text} />
+              ),
+            )
           const k = `${e.requestId}:${i}`
-          return (
+          return [
             <Box key={`item:${i}`} flexDirection="column">
               <Box flexDirection="row" columnGap={1}>
                 <Button key={`item:${k}`} label={open[k] ? '−' : '+'} onPress={toggle(k)} />
                 <Text dimColor>{`thread-item: ${p.title}`}</Text>
               </Box>
               {open[k] ? <Markdown key={`block:${i}`} text={p.block} /> : null}
-            </Box>
-          )
+            </Box>,
+          ]
         })}
       </Box>
     )
+  })
+
+  // A user row: line-leading tags drawn as `Thread AB · ` in the engine's own row (a text rewrite, no dim).
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    const text = relabel(e.props.text)
+    return text === e.props.text ? next(e) : next({ ...e, props: { ...e.props, text } })
   })
 }

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apply, file, gist, letters, parts, mint, parseAnswer, rebuild, WITHDRAWN } from './parse'
+import { apply, file, gist, labelled, letters, parts, relabel, mint, parseAnswer, rebuild, WITHDRAWN } from './parse'
 
 const ANSWER = [
   '[thread:a] Thread A: the migration plan is ready.',
@@ -228,4 +228,15 @@ test('parts: text, thread-item blocks with titles, other fences left in the text
   const card = ['```thread-item', 'kind: thread', 'key: w', 'title: Work', '```'].join('\n')
   expect(parts(`one\n\n${card}\n\`\`\`ts\nx\n\`\`\`\ntwo`)).toEqual([{ text: 'one' }, { title: 'Work', block: card }, { text: '```ts\nx\n```\ntwo' }])
   expect(parts('a\n```thread-item\ntitle: T')).toEqual([{ text: 'a' }, { text: '```thread-item\ntitle: T' }])
+})
+
+test('labelled and relabel: display splits by tag lines, fences kept whole', () => {
+  expect(labelled('lead\n[thread:ab] resolved\nafter\n[thread:b] body\nmore')).toEqual([
+    { id: null, text: 'lead', verb: false },
+    { id: 'ab', text: 'resolved', verb: true },
+    { id: null, text: 'after', verb: false },
+    { id: 'b', text: 'body\nmore', verb: false },
+  ])
+  expect(labelled('```\n[thread:a] x\n```')).toEqual([{ id: null, text: '```\n[thread:a] x\n```', verb: false }])
+  expect(relabel('[thread:ab] hi\n  [thread:c] there\nnot [thread:d] here')).toBe('Thread AB · hi\n  Thread C · there\nnot [thread:d] here')
 })

@@ -313,3 +313,38 @@ export function parts(text: string): Part[] {
   flush()
   return out
 }
+
+// A text part split for display at its tag lines (outside code fences): the thread id (null before the first tag)
+// and the text after the tag; `verb` marks a line that is only a tag and a protocol word.
+export type Labelled = { id: string | null; text: string; verb: boolean }
+const VERB_ONLY = /^(?:(?:resolved|stale|closed)[.!]?|withdrawn\s+\S+)$/i
+export function labelled(text: string): Labelled[] {
+  const out: Labelled[] = []
+  let cur: Labelled | null = null
+  let fence = ''
+  const start = (id: string | null, line: string, verb = false) => out.push((cur = { id, text: line, verb }))
+  const add = (line: string) => (cur && !cur.verb ? (cur.text += '\n' + line) : start(null, line))
+  for (const line of text.split('\n')) {
+    if (fence) {
+      if (closes(fence, line)) fence = ''
+      add(line)
+      continue
+    }
+    const o = OPEN.exec(line)
+    if (o) {
+      fence = o[1]!
+      add(line)
+      continue
+    }
+    const t = SECTION.exec(line)
+    if (!t) {
+      add(line)
+      continue
+    }
+    const rest = line.replace(SECTION, '').trim()
+    start(t[1]!.toLowerCase(), rest, VERB_ONLY.test(rest))
+  }
+  return out.map(s => ({ ...s, text: s.text.trim() })).filter(s => s.text || s.id)
+}
+// A user row's text with each line-leading tag drawn as a `Thread AB · ` label.
+export const relabel = (text: string) => text.replace(new RegExp(String.raw`^([ \t]*)${TAG}[ \t]*`, 'gm'), (_, sp: string, id: string) => `${sp}Thread ${label(id.toLowerCase())} · `)

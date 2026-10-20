@@ -549,8 +549,9 @@ test('transcript: a thread-item block draws as one line between the text, opens 
   const ui = await $.ui.mount({ ...MSG, props: { text, isFirstOfReply: true } })
   const drawn = async () => ((await ui.drawn()) as { children: { type: string; props: { text?: string } }[] }).children
   let rows = await drawn()
-  expect(rows.map(r => r.type)).toEqual(['Markdown', 'Box', 'Markdown'])
-  expect([rows[0]!.props.text, rows[2]!.props.text]).toEqual(['[thread:a] Before the card.', 'After the card.'])
+  expect(rows.map(r => r.type)).toEqual(['Box', 'Box', 'Markdown']) // labelled section, the block's line, the text after
+  expect(JSON.stringify(rows[0])).toContain('Before the card.')
+  expect(rows[2]!.props.text).toBe('After the card.')
   expect((await ui.find({ type: 'Text', text: /^thread-item: / }))?.text).toBe('thread-item: Pick one')
   expect((await ui.find({ key: 'item:msg1:1' }))?.text).toBe('+')
   expect(JSON.stringify(rows)).not.toContain('kind: decision')
@@ -561,7 +562,129 @@ test('transcript: a thread-item block draws as one line between the text, opens 
   expect(JSON.stringify(await drawn())).not.toContain('kind: decision')
   await ui.unmount()
 
-  const plain = await $.ui.mount({ ...MSG, requestId: 'msg2', props: { text: '[thread:a] Just text.\n```ts\nconst x = 1\n```', isFirstOfReply: true } })
-  expect((await plain.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine') // no block: the engine draws its own
+  const plain = await $.ui.mount({ ...MSG, requestId: 'msg2', props: { text: 'Just text.\n```ts\nconst x = 1\n```', isFirstOfReply: true } })
+  expect((await plain.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine') // no block, no tag: the engine draws its own
   await plain.unmount()
+})
+
+const COMPOSE = { model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: { name: 'default', isKeepingCodingInstructions: true }, traits: [] } as const
+const instructed = async ($: $T) => (await $.prompt.compose({ ...COMPOSE, surfaces: ['terminal'], tools: [], traits: [] })).sections.some(s => s.id === 'conversations:coordinator')
+
+test('instructions: none in a fresh session; on after /thread, a tagged prompt or a thread-item, and they stay on', async ($, on) => {
+  on('prompt.compose', () => ({ sections: [] }))
+  on('prompt.fill', () => ({ isFilled: true }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await start($, on, () => [])
+  expect(await instructed($)).toBe(false)
+  await $.prompt.submit({ text: 'plain question', origin: { kind: 'composer' }, wait: false })
+  await reply($, 'plain answer')
+  expect(await instructed($)).toBe(false)
+  await $.command.run({ command: 'thread', args: 'list', ...RUN })
+  expect(await instructed($)).toBe(true)
+  expect(await instructed($)).toBe(true)
+})
+
+test('instructions: a tagged prompt turns them on', async ($, on) => {
+  on('prompt.compose', () => ({ sections: [] }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await start($, on, () => [])
+  await $.prompt.submit({ text: '[thread:q] hello', origin: { kind: 'composer' }, wait: false })
+  expect(await instructed($)).toBe(true)
+})
+
+test("instructions: the model's thread-item alone does not turn them on; a tagged prompt in a resumed transcript does", async ($, on) => {
+  on('prompt.compose', () => ({ sections: [] }))
+  on('ui.notify', () => ({ value: {} }) as never)
+  let rows: { role: string; text: string; toolUses: unknown[] }[] = []
+  await start($, on, () => rows as never)
+  await reply($, ['Starting.', '```thread-item', 'kind: thread', 'key: w', 'title: Work', '```', DECISION].join('\n'))
+  expect(await instructed($)).toBe(false)
+  rows = [{ role: 'user', text: '[thread:a] earlier work', toolUses: [] }]
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(await instructed($)).toBe(true)
+})
+
+test('transcript labels: a leading tag becomes a dim Thread label, a protocol-only line one dim line; untagged rows pass', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await start($, on)
+  const text = 'Lead without a tag.\n[thread:ac] resolved\n\nThe count is running.\n[thread:b] Build is green.\n```text\n[thread:z] inside a fence\n```'
+  const ui = await $.ui.mount({ ...MSG, requestId: 'm3', props: { text, isFirstOfReply: true } })
+  const texts = (await ui.findAll({ type: 'Text' })).map(x => x.text)
+  expect(texts).toEqual(['Thread AC · resolved', 'Thread B ·'])
+  const md = JSON.stringify(await ui.drawn())
+  expect(md).toContain('Lead without a tag.')
+  expect(md).toContain('The count is running.')
+  expect(md).toContain('[thread:z] inside a fence')
+  expect(md).not.toContain('[thread:ac]')
+  expect(md).not.toContain('[thread:b]')
+  await ui.unmount()
+  const plain = await $.ui.mount({ ...MSG, requestId: 'm4', props: { text: 'No tags here.', isFirstOfReply: true } })
+  expect((await plain.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+  await plain.unmount()
+})
+
+test('transcript labels: a user row draws Thread labels in place of line-leading tags; untagged rows pass', async ($, on) => {
+  const seen: string[] = []
+  on('ui.render', ($, e) => {
+    seen.push((e.props as { text: string }).text)
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await start($, on)
+  const USER = { plugin: 'conversations', component: 'UserMessage', requestId: 'u1', surface: 'terminal' } as const
+  const props = (text: string) => ({ text, origin: { kind: 'composer' }, isExpanded: false }) as const
+  const a = await $.ui.mount({ ...USER, props: props('[thread:ab] fix the build') })
+  await a.unmount()
+  const b = await $.ui.mount({ ...USER, requestId: 'u2', props: props('The conversations plugin sent a message:\n[thread:ac] decide: k a (Yes)') })
+  await b.unmount()
+  const c = await $.ui.mount({ ...USER, requestId: 'u3', props: props('no tag') })
+  await c.unmount()
+  expect(seen).toEqual(['Thread AB · fix the build', 'The conversations plugin sent a message:\nThread AC · decide: k a (Yes)', 'no tag'])
+})
+
+const LOOSE = ['General question.', DECISION.replace('key: k1', 'key: g1'), DECISION.replace('key: k1', 'key: g2')].join('\n')
+
+test('No thread: the band shows a row for open untagged decisions, not the empty hint; list and summary count them; view alias', async ($, on) => {
+  on('ui.notify', () => ({ value: {} }) as never)
+  const opened: (string | undefined)[] = []
+  on('ui.open', (_, e) => {
+    opened.push(e.title)
+    return { value: { isPlaced: true } } as never
+  })
+  await start($, on, () => [])
+  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
+  let band = await $.ui.mount(BAND)
+  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
+  await band.unmount()
+  expect(await run('list')).toBe('No threads.')
+
+  await reply($, LOOSE)
+  band = await $.ui.mount(BAND)
+  expect(await band.find({ type: 'Text', text: /^No threads/ })).toBeUndefined()
+  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  needs answer')
+  expect(await band.find({ key: 'collapse' })).toBeDefined()
+  await band.press({ key: 'loose' })
+  expect(opened.at(-1)).toBe('Threads')
+  await band.press({ key: 'collapse' })
+  expect((await band.find({ type: 'Text', text: /threads? ·/ }))?.text).toBe('0 threads · 1 needs answer')
+  await band.press({ key: 'expand' })
+  await band.unmount()
+  expect(await run('list')).toBe('- No thread  [● 2 open]')
+
+  expect(await run('view')).toBe('View shown.')
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ type: 'Text', text: /^No thread$/ })).toBeDefined()
+  await pane.unmount()
+
+  // Both answered: the group leaves the band and the list.
+  await reply($, 'Done.\nwithdrawn g1\nwithdrawn g2')
+  band = await $.ui.mount(BAND)
+  expect(await band.find({ key: 'loose' })).toBeUndefined()
+  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
+  await band.unmount()
+  expect(await run('list')).toBe('No threads.')
 })

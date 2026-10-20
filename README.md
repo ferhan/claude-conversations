@@ -11,7 +11,7 @@ You can as easily continue working in your current mode in single CLI, or take a
 
 ### Tags
 
-A thread has a short letter id (`a`, `b`, ... `ab`), shown as "Thread AB". A prompt sent while a thread is selected goes out as `[thread:<id>] <prompt>`. The plugin tells the model the protocol, and the model starts its reply with the same tag.
+A thread has a short letter id (`a`, `b`, ... `ab`), shown as "Thread AB". A prompt sent while a thread is selected goes out as `[thread:<id>] <prompt>`. The plugin tells the model the protocol, and the model starts its reply with the same tag. Those instructions are added to the system prompt only once threads are in use in the session (a `/thread` command ran, or a prompt you sent carries a tag, including earlier in a resumed session); a `thread-item` block the model writes on its own does not turn them on; a session that never uses threads runs as if the plugin were not there.
 
 A reply can answer several threads: each line that starts with `[thread:<id>]` begins a section for that thread, up to the next tag line. Text before the first tag belongs to no thread.
 
@@ -46,7 +46,7 @@ agent: Fix the login timeout
 
 A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision emitted outside any tag is listed under "No thread".
 
-In the transcript each `thread-item` block is drawn as one line, `[+] thread-item: <title>`, that opens to the full block on a press; the stored reply keeps the block.
+In the transcript each `thread-item` block is drawn as one line, `[+] thread-item: <title>`, that opens to the full block on a press; a line-leading `[thread:<id>]` is drawn as a `Thread AB ·` label, and a line that is only a tag and `resolved`, `stale`, `closed` or `withdrawn <key>` as one dim line. Only the drawing changes; the stored text keeps every tag and block.
 
 ### Answers and protocol lines
 
@@ -67,15 +67,15 @@ When a `kind: thread` item has an `agent` field equal to the `description` given
 | `/thread` | Open or close the pane |
 | `/thread <id>` | Select a thread (reopens it if closed); prompts are tagged with it |
 | `/thread none` | Clear the selection; prompts go untagged |
-| `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`) |
+| `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`), plus `No thread  [● N open]` for open untagged decisions |
 | `/thread new <message>` | Create and select a thread titled by the message, and put `[thread:<id>] <message>` in the prompt |
 | `/thread close <ids>` | Close one or more threads (`/thread <id> close` also works) |
 | `/thread show-band`, `/thread hide-band` | Show or hide the band |
-| `/thread show-view`, `/thread hide-view` | Open the pane on the needs-you list, or close it |
+| `/thread view`, `/thread show-view`, `/thread hide-view` | Open the pane on the needs-you list, or close it |
 
 ## Band and pane
 
-The band above the prompt has one row per open thread: hotkey `1`-`9`, "Thread AB", the title cut to fit, and `needs answer` or `●` (unseen replies) at the end. Pressing a row selects the thread and opens the pane on it. `−` collapses the band to one summary line (`3 threads · 1 needs answer`), `+` expands it. The footer has `none`, `view` and a count of closed threads. With no open thread and none selected, the band shows one dim line instead: `No threads · /thread new <message> to start one`.
+The band above the prompt has one row per open thread: hotkey `1`-`9`, "Thread AB", the title cut to fit, and `needs answer` or `●` (unseen replies) at the end. Pressing a row selects the thread and opens the pane on it. `−` collapses the band to one summary line (`3 threads · 1 needs answer`), `+` expands it. The footer has `none`, `view` and a count of closed threads. Open "No thread" decisions get their own row, `No thread  needs answer`, which opens the needs-you list. With no open thread, none selected and no open "No thread" decision, the band shows one dim line instead: `No threads · /thread new <message> to start one`.
 
 The pane shows, per active thread, a header, one status line (`needs answer`, or `new:` with the first meaningful line of the latest reply and a `☐ seen` button) and the open decision cards. With no thread selected, or after `view`, it lists the threads that need you: open decisions first, then unseen replies. Reply bodies stay in the transcript. When the pane shows one thread, its header has a `Close thread` button: it closes the thread as `/thread close` does and the pane goes back to the needs-you list.
 
