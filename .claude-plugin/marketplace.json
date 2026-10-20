@@ -1,0 +1,14 @@
+{
+  "name": "claude-conversations",
+  "description": "Threads inside a Claude Code conversation.",
+  "owner": {
+    "name": "Ferhan Elvanoglu"
+  },
+  "plugins": [
+    {
+      "name": "conversations",
+      "source": "./",
+      "description": "Threads inside a Claude Code conversation: tagged prompts and replies, decision cards and a needs-you pane."
+    }
+  ]
+}
