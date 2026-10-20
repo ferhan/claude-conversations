@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ThreadCard, Thread } from '../types'
-import { apply, file, gist, label, learn, mint, rebuild, tagOf } from './parse'
+import { apply, file, gist, label, learn, mint, parts, rebuild, tagOf } from './parse'
 
 const PANE = 'thread-pane'
 const threads = atom({ plugin: 'conversations', key: 'threads' } as const, [])
@@ -31,6 +31,7 @@ const closeThreads = async ($: EngineInterface, ids: string[]) => {
   if (sel && known.includes(sel)) await select($, null)
   return known
 }
+const expanded = atom({ plugin: 'conversations', key: 'expanded' } as const, {}) // `<message id>:<part index>` of thread-item blocks drawn open
 const collapsed = atom({ plugin: 'conversations', key: 'collapsed' } as const, false)
 
 // What the coordinator (the main session's model) is told about the protocol.
@@ -317,6 +318,40 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         {active.map(t => block(t))}
+      </Box>
+    )
+  })
+
+  // A reply's thread-item blocks draw as one line each, `[+] thread-item: <title>`, opened in place on a press.
+  // Only the drawing changes: the stored reply, what the model reads, keeps the block.
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    if (e.props.isSummary) return next(e)
+    const ps = parts(e.props.text)
+    if (!ps.some(p => 'block' in p)) return next(e)
+    const { Box, Button, Markdown, Text } = $.ui.resolve(e)
+    const open = await read($, expanded)
+    const toggle = (k: string) => () =>
+      update($, expanded, m => {
+        const n = { ...m }
+        if (n[k]) delete n[k]
+        else n[k] = true
+        return n
+      })
+    return (
+      <Box flexDirection="column">
+        {ps.map((p, i) => {
+          if (!('block' in p)) return <Markdown key={`text:${i}`} text={p.text} />
+          const k = `${e.requestId}:${i}`
+          return (
+            <Box key={`item:${i}`} flexDirection="column">
+              <Box flexDirection="row" columnGap={1}>
+                <Button key={`item:${k}`} label={open[k] ? '−' : '+'} onPress={toggle(k)} />
+                <Text dimColor>{`thread-item: ${p.title}`}</Text>
+              </Box>
+              {open[k] ? <Markdown key={`block:${i}`} text={p.block} /> : null}
+            </Box>
+          )
+        })}
       </Box>
     )
   })

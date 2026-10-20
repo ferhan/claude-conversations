@@ -268,3 +268,48 @@ export const gist = (sections: string[]) => {
   }
   return ''
 }
+
+// A reply split for drawing: its text, and each thread-item block with its title. An unclosed block stays text.
+export type Part = { text: string } | { title: string; block: string }
+export function parts(text: string): Part[] {
+  const out: Part[] = []
+  let buf: string[] = []
+  let fence = ''
+  let block: string[] | null = null
+  const flush = () => {
+    const t = buf.join('\n').trim()
+    if (t) out.push({ text: t })
+    buf = []
+  }
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (block) {
+      block.push(line)
+      if (closes(fence, line)) {
+        const y = yamlish(block.slice(1, -1).join('\n'))
+        const s = (k: string) => (typeof y[k] === 'string' ? (y[k] as string) : '')
+        out.push({ title: s('title') || s('question') || s('key') || 'untitled', block: block.join('\n') })
+        block = null
+        fence = ''
+      }
+      continue
+    }
+    if (fence) {
+      if (closes(fence, line)) fence = ''
+      buf.push(line)
+      continue
+    }
+    const o = OPEN.exec(line)
+    if (o) {
+      fence = o[1]!
+      if (ITEM.includes(o[2]!)) {
+        flush()
+        block = [line]
+        continue
+      }
+    }
+    buf.push(line)
+  }
+  if (block) buf.push(...block)
+  flush()
+  return out
+}

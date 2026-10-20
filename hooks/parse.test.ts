@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apply, file, gist, letters, mint, parseAnswer, rebuild, WITHDRAWN } from './parse'
+import { apply, file, gist, letters, parts, mint, parseAnswer, rebuild, WITHDRAWN } from './parse'
 
 const ANSWER = [
   '[thread:a] Thread A: the migration plan is ready.',
@@ -222,4 +222,10 @@ test('rebuild: an operator prompt to a closed thread reopens it; a delivery the 
   const note = { role: 'user', text: '[thread:c] <task-notification>\n<task-id>x</task-id>\n</task-notification>' }
   expect(rebuild([...rows, note])[0]!.closed).toBe(true)
   expect(rebuild([...rows, { role: 'user', text: '[thread:c] back to this' }])[0]!.closed).toBe(false)
+})
+
+test('parts: text, thread-item blocks with titles, other fences left in the text, an unclosed block stays text', () => {
+  const card = ['```thread-item', 'kind: thread', 'key: w', 'title: Work', '```'].join('\n')
+  expect(parts(`one\n\n${card}\n\`\`\`ts\nx\n\`\`\`\ntwo`)).toEqual([{ text: 'one' }, { title: 'Work', block: card }, { text: '```ts\nx\n```\ntwo' }])
+  expect(parts('a\n```thread-item\ntitle: T')).toEqual([{ text: 'a' }, { text: '```thread-item\ntitle: T' }])
 })

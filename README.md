@@ -46,6 +46,8 @@ agent: Fix the login timeout
 
 A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision emitted outside any tag is listed under "No thread".
 
+In the transcript each `thread-item` block is drawn as one line, `[+] thread-item: <title>`, that opens to the full block on a press; the stored reply keeps the block.
+
 ### Answers and protocol lines
 
 - Pressing an option sends `[thread:<id>] decide: <key> <option>` (untagged for a "No thread" decision). The card is marked answered at once and is not sent twice.

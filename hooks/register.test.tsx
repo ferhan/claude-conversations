@@ -528,3 +528,40 @@ test('band: the empty-band hint shows with no threads, not when hidden, not once
   await run('new first')
   expect((await text()).some(t => t.startsWith('No threads'))).toBe(false)
 })
+
+const MSG = {
+  plugin: 'conversations',
+  component: 'AssistantMessage',
+  requestId: 'msg1',
+  surface: 'terminal',
+} as const
+
+test('transcript: a thread-item block draws as one line between the text, opens on a press; the stored reply is unchanged', async ($, on) => {
+  on('ui.notify', () => ({ value: {} }) as never)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await start($, on)
+  const text = `[thread:a] Before the card.\n\n${DECISION}\n\nAfter the card.`
+  // The stored reply: turn.complete hands on the answer untouched, and the card still reaches its thread.
+  expect((await reply($, text)).text).toBe(text)
+  const ui = await $.ui.mount({ ...MSG, props: { text, isFirstOfReply: true } })
+  const drawn = async () => ((await ui.drawn()) as { children: { type: string; props: { text?: string } }[] }).children
+  let rows = await drawn()
+  expect(rows.map(r => r.type)).toEqual(['Markdown', 'Box', 'Markdown'])
+  expect([rows[0]!.props.text, rows[2]!.props.text]).toEqual(['[thread:a] Before the card.', 'After the card.'])
+  expect((await ui.find({ type: 'Text', text: /^thread-item: / }))?.text).toBe('thread-item: Pick one')
+  expect((await ui.find({ key: 'item:msg1:1' }))?.text).toBe('+')
+  expect(JSON.stringify(rows)).not.toContain('kind: decision')
+  await ui.press({ key: 'item:msg1:1' })
+  expect((await ui.find({ key: 'item:msg1:1' }))?.text).toBe('−')
+  expect(JSON.stringify(await drawn())).toContain('kind: decision')
+  await ui.press({ key: 'item:msg1:1' })
+  expect(JSON.stringify(await drawn())).not.toContain('kind: decision')
+  await ui.unmount()
+
+  const plain = await $.ui.mount({ ...MSG, requestId: 'msg2', props: { text: '[thread:a] Just text.\n```ts\nconst x = 1\n```', isFirstOfReply: true } })
+  expect((await plain.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine') // no block: the engine draws its own
+  await plain.unmount()
+})
