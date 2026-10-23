@@ -240,3 +240,27 @@ test('labelled and relabel: display splits by tag lines, fences kept whole', () 
   expect(labelled('```\n[thread:a] x\n```')).toEqual([{ id: null, text: '```\n[thread:a] x\n```', verb: false }])
   expect(relabel('[thread:ab] hi\n  [thread:c] there\nnot [thread:d] here')).toBe('Thread AB · hi\n  Thread C · there\nnot [thread:d] here')
 })
+
+test('decision thread: names a thread by key, including one opened in the same reply; an unknown or closed key falls back to the section', () => {
+  const open = item(['kind: thread', 'key: x', 'title: New topic'])
+  const ask = (t: string) => item(['kind: decision', 'key: d', 'title: Pick', 'thread: ' + t, 'options:', '  - a: One'])
+  const named = apply([], `${open}\n${ask('x')}`).threads
+  expect(named.filter(t => t.key).map(t => [t.id, t.key, t.cards.map(c => c.key)])).toEqual([['a', 'x', ['d']]])
+  expect(named.find(t => !t.id)!.cards).toEqual([])
+  expect(named[0]!.cards[0] ?? named[1]!.cards[0]).not.toHaveProperty('thread')
+  const q = { id: 'q', title: 'Q', key: 'q', sections: [], cards: [], closed: false }
+  const lost = apply([q], `[thread:q] hi\n${ask('nope')}`).threads
+  expect(lost.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', ['d']]])
+  const shut = apply([{ ...q, closed: true }], `[thread:a] hi\n${ask('q')}`).threads
+  expect(shut.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', []], ['a', ['d']]])
+})
+
+test('decision thread: an untagged withdrawn <key> retires a decision placed on a model-opened thread; order of sections is as without thread:', () => {
+  const open = item(['kind: thread', 'key: x', 'title: New topic'])
+  const ask = item(['kind: decision', 'key: d', 'title: Pick', 'thread: x', 'options:', '  - a: One'])
+  const one = apply([], `${open}\n${ask}`).threads
+  expect(apply(one, 'withdrawn d').threads.find(t => t.key === 'x')!.cards.map(c => c.answered)).toEqual([WITHDRAWN])
+  const body = item(['kind: thread', 'key: ka', 'title: K', 'body: B'])
+  const a = { id: 'a', title: 'A', key: 'ka', sections: [], cards: [], closed: false }
+  expect(apply([a], `[thread:a] hi\n${body}`).threads[0]!.sections).toEqual(['hi', 'B'])
+})
