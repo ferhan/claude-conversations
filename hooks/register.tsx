@@ -61,7 +61,8 @@ const COORDINATOR =
   "When you answer another thread's question, do not mention that thread inline: put that answer in its own section on a new line that begins with that thread's tag, for example `[thread:b] <answer>`. " +
   'Use only tags from prompts you received; never make one up. ' +
   'To open a thread for a topic or a piece of work, emit a `thread-item` block with `kind: thread`, `key`, `title`, optional `body` and, when an agent does that work, `agent` set to the exact `description` you give the Agent tool; that agent\'s reports then arrive tagged with the thread. ' +
-  'For a decision about a new topic, open a `kind: thread` block for the topic first and set `thread: <its key>` on the decision; a decision without `thread:` goes to the tagged thread it sits in, or to No thread. ' +
+  "To put a decision in a thread you open, emit the `kind: thread` block and set `thread: <that block's key>` in the decision block; `thread:` takes a key, never a tag id. " +
+  'A decision without `thread:` goes to the tagged section it sits in, or to No thread. Withdraw such a decision with `withdrawn <key>` before any tag. ' +
   'To retire a decision you no longer need answered, write `[thread:<id>] withdrawn <key>` on its own line, or `withdrawn <key>` before any tag for an untagged decision. ' +
   "Write `[thread:<id>] closed` on its own line only when the operator's prompt asks you to close that thread. " +
   'When the prompt does not start with a `[thread:<id>]` tag, start your reply without a tag.'
