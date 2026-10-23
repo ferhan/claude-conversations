@@ -240,3 +240,13 @@ test('labelled and relabel: display splits by tag lines, fences kept whole', () 
   expect(labelled('```\n[thread:a] x\n```')).toEqual([{ id: null, text: '```\n[thread:a] x\n```', verb: false }])
   expect(relabel('[thread:ab] hi\n  [thread:c] there\nnot [thread:d] here')).toBe('Thread AB · hi\n  Thread C · there\nnot [thread:d] here')
 })
+
+test('decision thread: names a thread by key, including one opened in the same reply; an unknown key falls back to the section', () => {
+  const open = item(['kind: thread', 'key: x', 'title: New topic'])
+  const ask = (t: string) => item(['kind: decision', 'key: d', 'title: Pick', 'thread: ' + t, 'options:', '  - a: One'])
+  const named = apply([], `${open}\n${ask('x')}`).threads
+  expect(named.map(t => [t.id, t.key, t.cards.map(c => c.key)])).toEqual([['a', 'x', ['d']]])
+  expect(named[0]!.cards[0]).not.toHaveProperty('thread')
+  const lost = apply([{ id: 'q', title: 'Q', key: 'q', sections: [], cards: [], closed: false }], `[thread:q] hi\n${ask('nope')}`).threads
+  expect(lost.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', ['d']]])
+})

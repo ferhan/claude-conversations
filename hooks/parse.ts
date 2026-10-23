@@ -7,7 +7,7 @@ export type Section = {
   thread: string // '<letters>', or '' for text before the first tag line
   text: string // display text: tag and thread-item blocks removed
   verb: 'resolved' | 'stale' | 'closed' | null
-  decisions: ThreadCard[]
+  decisions: (ThreadCard & { thread?: string })[]
   topics: Topic[]
 }
 
@@ -136,7 +136,7 @@ function yamlish(body: string): Record<string, string | string[]> {
   return out
 }
 
-function item(body: string): { decision?: ThreadCard; topic?: Topic } {
+function item(body: string): { decision?: Section['decisions'][number]; topic?: Topic } {
   const y = yamlish(body)
   const s = (k: string) => (typeof y[k] === 'string' ? (y[k] as string) : '')
   const title = s('title') || s('question')
@@ -148,7 +148,7 @@ function item(body: string): { decision?: ThreadCard; topic?: Topic } {
   })
   const refs = Array.isArray(y.refs) ? y.refs : y.refs ? [y.refs] : []
   return {
-    decision: { key: s('key') || title, title, description: s('description'), options, recommendation: s('recommendation'), refs, answered: null },
+    decision: { key: s('key') || title, title, description: s('description'), options, recommendation: s('recommendation'), refs, answered: null, ...(s('thread') && { thread: s('thread') }) },
   }
 }
 
@@ -225,29 +225,33 @@ export function apply(threads: Thread[], answer: string) {
     return t
   }
   const { sections, closes, withdrawn } = parseAnswer(answer)
-  for (const s of sections) {
-    if (s.thread || s.decisions.length) {
-      const t = get(s.thread)
-      if (s.thread && s.text) t.sections.push(s.text)
-      for (const c of s.decisions) {
-        const i = t.cards.findIndex(x => x.key === c.key)
-        const old = t.cards[i]
-        // Same key re-emitted with the same options keeps its answer; new options reopen it.
-        if (old && old.answered !== null && JSON.stringify(old.options) === JSON.stringify(c.options)) {
-          t.cards[i] = { ...c, answered: old.answered }
-          continue
-        }
-        if (i >= 0) t.cards[i] = c
-        else t.cards.push(c)
-        fresh.push({ thread: t, card: c })
-      }
-    }
+  // Thread blocks first, so a decision can name a thread opened in the same reply.
+  for (const s of sections)
     for (const p of s.topics) {
       const known = p.key ? next.find(x => x.key === p.key) : undefined
       const t = known ?? get(mint(next))
       if (!known) Object.assign(t, { title: p.title, key: p.key })
       if (p.agent) t.agent = p.agent
       if (p.body) t.sections.push(p.body)
+    }
+  for (const s of sections) {
+    if (s.thread) {
+      const sec = get(s.thread)
+      if (s.text) sec.sections.push(s.text)
+    }
+    for (const { thread: named, ...c } of s.decisions) {
+      // `thread: <key>` names the thread; an unknown key falls back to the section's thread.
+      const t = (named && next.find(x => x.key === named)) || get(s.thread)
+      const i = t.cards.findIndex(x => x.key === c.key)
+      const old = t.cards[i]
+      // Same key re-emitted with the same options keeps its answer; new options reopen it.
+      if (old && old.answered !== null && JSON.stringify(old.options) === JSON.stringify(c.options)) {
+        t.cards[i] = { ...c, answered: old.answered }
+        continue
+      }
+      if (i >= 0) t.cards[i] = c
+      else t.cards.push(c)
+      fresh.push({ thread: t, card: c })
     }
   }
   for (const w of withdrawn)
