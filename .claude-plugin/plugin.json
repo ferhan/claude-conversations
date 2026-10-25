@@ -1,6 +1,6 @@
 {
   "name": "conversations",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Threads inside a Claude Code conversation: tagged prompts and replies, decision cards and a needs-you pane.",
   "author": { "name": "Ferhan Elvanoglu" },
   "types": "./types/index.d.ts"

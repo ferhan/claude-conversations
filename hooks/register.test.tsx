@@ -665,7 +665,7 @@ test('No thread: the band shows a row for open untagged decisions, not the empty
   await reply($, LOOSE)
   band = await $.ui.mount(BAND)
   expect(await band.find({ type: 'Text', text: /^No threads/ })).toBeUndefined()
-  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  needs answer')
+  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  2 need answer')
   expect(await band.find({ key: 'collapse' })).toBeDefined()
   await band.press({ key: 'loose' })
   expect(opened.at(-1)).toBe('Threads')
@@ -680,8 +680,13 @@ test('No thread: the band shows a row for open untagged decisions, not the empty
   expect(await pane.find({ type: 'Text', text: /^No thread$/ })).toBeDefined()
   await pane.unmount()
 
-  // Both answered: the group leaves the band and the list.
-  await reply($, 'Done.\nwithdrawn g1\nwithdrawn g2')
+  await reply($, 'Done.\nwithdrawn g1')
+  band = await $.ui.mount(BAND)
+  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  1 needs answer')
+  await band.unmount()
+
+  // The last one answered: the group leaves the band and the list.
+  await reply($, 'Done.\nwithdrawn g2')
   band = await $.ui.mount(BAND)
   expect(await band.find({ key: 'loose' })).toBeUndefined()
   expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
