@@ -226,7 +226,7 @@ export const register: Register = on => {
     const every = await read($, threads)
     const all = every.filter(t => t.id)
     const list = all.filter(t => !t.closed)
-    const loose = every.some(t => !t.id && pending(t)) // open "No thread" decisions
+    const loose = every.find(t => !t.id)?.cards.filter(c => c.answered === null).length ?? 0 // open "No thread" decisions
     const nClosed = all.length - list.length
     const id = await read($, selected)
     if (e.props.hasSurvey || (await read($, bandHidden))) return next(e)
@@ -266,7 +266,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor>{'─'.repeat(e.props.bodyColumns)}</Text>
-        {[...list.map((t, i) => [t.id, row(t, i)] as const), ...(loose ? [['', <Button key="loose" label="No thread  needs answer" onPress={view} />] as const] : [])].map(
+        {[...list.map((t, i) => [t.id, row(t, i)] as const), ...(loose ? [['', <Button key="loose" label={`No thread  ${loose === 1 ? '1 needs' : `${loose} need`} answer`} onPress={view} />] as const] : [])].map(
           ([k, el], i) => (
             <Box key={`line:${k}`} flexDirection="row" columnGap={1}>
               <Box width={TOGGLE} flexShrink={0}>
