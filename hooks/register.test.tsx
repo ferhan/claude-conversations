@@ -749,3 +749,16 @@ test('dismiss: works on a thread card in the thread view', async ($, on) => {
   expect(await pane.find({ type: 'Text', text: /^needs answer$/ })).toBeUndefined()
   await pane.unmount()
 })
+
+test('a prompt in a model-opened thread carries its key as context; one in a keyless thread does not', async ($, on) => {
+  const got: { text: string; context?: readonly string[] }[] = []
+  on('prompt.submit', (_, e) => {
+    got.push({ text: e.text, context: e.context })
+    return { text: e.text }
+  })
+  await start($, on, () => [...ROWS, { role: 'assistant', text: `Starting.\n${WORK}`, toolUses: [] }] as never)
+  await $.prompt.submit({ text: '[thread:d] go on', origin: { kind: 'composer' } } as never)
+  expect(got.at(-1)?.context?.at(-1)).toBe('Thread [thread:d] has key w: set `thread: w` on a decision that belongs to it.')
+  await $.prompt.submit({ text: '[thread:a] go on', origin: { kind: 'composer' } } as never)
+  expect(got.at(-1)?.context).toBeUndefined()
+})
