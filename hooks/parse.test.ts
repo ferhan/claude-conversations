@@ -160,7 +160,7 @@ test('unfiled decision: opens a thread from its key and title; the same key join
   const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes', '  - b: No'])
   const rows = [
     { role: 'assistant', text: `General question.\n${ask}` },
-    { role: 'user', text: '[thread:a] decide: g a (Yes)' },
+    { role: 'user', text: 'The conversations plugin sent a message:\ndecide: g a (Yes)' },
   ]
   const live = apply([], `General question.\n${ask}`)
   expect(live.threads.map(t => [t.id, t.key, t.title, t.cards.map(c => c.key)])).toEqual([['a', 'g', 'General?', ['g']]])
@@ -177,6 +177,9 @@ test('unfiled decision: a closed thread with the key is not reused; a tagged sec
   const shut = { id: 'q', title: 'G', key: 'g', sections: [], cards: [], closed: true }
   expect(apply([shut], ask).threads.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', []], ['r', ['g']]])
   expect(apply([], `[thread:ab] hi\n${ask}`).threads.map(t => t.id)).toEqual(['ab'])
+  // a later thread item with that key reaches the open thread, not the closed one
+  const out = apply([shut], `${ask}\n${item(['kind: thread', 'key: g', 'title: G', 'body: B'])}`).threads
+  expect(out.map(t => [t.id, t.sections])).toEqual([['q', []], ['r', ['B']]])
 })
 
 test('unfiled decision: a valid thread: key is unchanged and opens nothing new', () => {
@@ -198,6 +201,13 @@ test('withdrawn: a decision retired live and on rebuild; new options reopen it',
   expect(t.sections).toEqual(['question', 'superseded by the new plan']) // the withdrawn line is no reply text
   expect(apply(rebuild(rows), `[thread:ad] again\n${ask}`).threads[0]!.cards[0]!.answered).toBe(WITHDRAWN)
   expect(apply(rebuild(rows), `[thread:ad] again\n${ask.replace('  - b: B', '  - c: C')}`).threads[0]!.cards[0]!.answered).toBe(null)
+})
+
+test('withdrawn: a bare line inside a tagged section is only text', () => {
+  const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes'])
+  const out = apply(apply([], ask).threads, '[thread:ab] note\nwithdrawn g').threads
+  expect(out.find(t => t.key === 'g')!.cards[0]!.answered).toBe(null)
+  expect(out.find(t => t.id === 'ab')!.sections).toEqual(['note\nwithdrawn g'])
 })
 
 test('gist: the status skips protocol-only lines and falls back to the previous reply', () => {

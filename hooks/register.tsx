@@ -69,7 +69,7 @@ const COORDINATOR =
   'When the prompt does not start with a `[thread:<id>]` tag, start your reply without a tag.'
 
 const cut = (s: string, n: number) => (s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s)
-const head = (t: Thread) => (t.id ? `Thread ${label(t.id)} · ${t.title || 'untitled'}` : 'No thread')
+const head = (t: Thread) => `Thread ${label(t.id)} · ${t.title || 'untitled'}`
 const OWN = ['composer', 'bridge', 'sdk'] // the operator's own prompts; every other origin is a delivery
 const isOpen = async ($: EngineInterface) => (await $.ui.panes()).some(p => p.id === PANE)
 // No `focus`: the pane opens beside the prompt and the prompt keeps the keys.
@@ -101,7 +101,7 @@ const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sec
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | close none | show-band | hide-band | view | show-view | hide-view]' })
+    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | show-band | hide-band | view | show-view | hide-view]' })
     // --resume: rebuild threads from the tagged user and assistant rows already in the transcript.
     const shut = await read($, closedIds)
     const rows = await $.session.messages()
@@ -194,13 +194,10 @@ export const register: Register = on => {
       return { text: 'Prompts go untagged.' }
     }
     if (arg === 'list') {
-      const every = await read($, threads)
-      const all = every.filter(t => t.id)
+      const all = await read($, threads)
       const room = Math.max(10, e.presentation.columns - 30)
-      const loose = every.find(t => !t.id)?.cards.filter(c => c.answered === null).length ?? 0
       // The row is markdown: bare newlines are soft breaks that join into one paragraph, so one list item per thread.
       const lines = all.map(t => `- Thread ${label(t.id)}  ${cut(t.title || 'untitled', room)}  [${t.closed ? 'closed' : pending(t) ? '●' : t.cards.length ? 'answered' : 'open'}]`)
-      if (loose) lines.push(`- No thread  [● ${loose} open]`)
       return { text: lines.join('\n') || 'No threads.' }
     }
     if (arg === 'new' || arg.startsWith('new ')) {
@@ -212,8 +209,6 @@ export const register: Register = on => {
       return { text: `Thread ${label(id)} started: press Enter to send.` }
     }
     const words = arg.split(/\s+/)
-    if (words[0] === 'close' && words.length === 2 && (words[1] === 'none' || words[1] === 'no-thread'))
-      return { text: `No-thread decisions dismissed (${await dismiss($, t => t.id === '')}).` }
     // `/thread close a b`, or `/thread a close` as first typed.
     const ids = words[0] === 'close' ? words.slice(1) : words[1] === 'close' && words.length === 2 ? [words[0]!] : null
     if (ids) {
@@ -229,21 +224,19 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const every = await read($, threads)
-    const all = every.filter(t => t.id)
+    const all = await read($, threads)
     const list = all.filter(t => !t.closed)
-    const loose = every.find(t => !t.id)?.cards.filter(c => c.answered === null).length ?? 0 // open "No thread" decisions
     const nClosed = all.length - list.length
     const id = await read($, selected)
     if (e.props.hasSurvey || (await read($, bandHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const view = async () => (await update($, shown, () => null), openPane($))
     // One line, so no rule row above it.
-    if (list.length === 0 && !id && !loose) return <Text dimColor>No threads · /thread new &lt;message&gt; to start one</Text>
+    if (list.length === 0 && !id) return <Text dimColor>No threads · /thread new &lt;message&gt; to start one</Text>
     const seen = await read($, acked)
     const toggle = () => update($, collapsed, c => !c)
     if (await read($, collapsed)) {
-      const nAsk = list.filter(pending).length + (loose ? 1 : 0)
+      const nAsk = list.filter(pending).length
       const nNew = list.filter(t => unseen(t, seen)).length
       return (
         <Box flexDirection="row" columnGap={1}>
@@ -272,7 +265,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor>{'─'.repeat(e.props.bodyColumns)}</Text>
-        {[...list.map((t, i) => [t.id, row(t, i)] as const), ...(loose ? [['', <Button key="loose" label={`No thread  ${loose === 1 ? '1 needs' : `${loose} need`} answer`} onPress={view} />] as const] : [])].map(
+        {list.map((t, i) => [t.id, row(t, i)] as const).map(
           ([k, el], i) => (
             <Box key={`line:${k}`} flexDirection="row" columnGap={1}>
               <Box width={TOGGLE} flexShrink={0}>
@@ -301,7 +294,7 @@ export const register: Register = on => {
       let open = false // set inside the update so two presses cannot both see the card open
       await update($, threads, l => {
         open = !!l.find(x => x.id === t.id)?.cards.some(y => y.key === c.key && y.answered === null)
-        return open ? l.map(x => (x.id === t.id || x.id === '' ? { ...x, cards: x.cards.map(y => (y.key === c.key ? { ...y, answered: o.id } : y)) } : x)) : l
+        return open ? l.map(x => (x.id === t.id ? { ...x, cards: x.cards.map(y => (y.key === c.key ? { ...y, answered: o.id } : y)) } : x)) : l
       })
       if (!open) return
       await $.prompt.submit({ text: `${t.id ? `[thread:${t.id}] ` : ''}decide: ${c.key} ${o.id} (${o.label})` })

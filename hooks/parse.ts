@@ -40,7 +40,7 @@ export function mint(threads: { id: string }[]): string {
 }
 
 const USER_TAG = new RegExp(String.raw`^\s*${TAG}[ \t]*([\s\S]*)$`)
-// The pane's own decide prompt, tagged or (for a "No thread" decision) not. A plugin-submitted prompt reaches the
+// The pane's own decide prompt, tagged or (from before 0.2.8) not. A plugin-submitted prompt reaches the
 // transcript wrapped ("The <plugin> plugin sent a message:\n[thread:ac] decide: ..."), so any line matches.
 const DECIDE = new RegExp(String.raw`^\s*(?:${TAG}[ \t]*)?decide:[ \t]+(\S+)[ \t]+(\S+)`, 'gm')
 
@@ -102,9 +102,9 @@ export function rebuild(rows: { role: string; text?: string; toolUses?: readonly
         list = list.map(t => (t.id === id ? { ...t, title: t.title || rest.split('\n')[0]!, closed: t.closed && !own } : t)) // a prompt to a closed thread reopens it
       }
       list = file(list, m.text).threads
-      // A decide keeps its card answered across a rebuild (a reload, --resume); it also settles a "No thread" copy of the key.
+      // A decide keeps its card answered across a rebuild (a reload, --resume); an untagged one reaches every keyed (model-opened) thread.
       for (const [, tag = '', key, opt] of m.text.matchAll(DECIDE))
-        list = list.map(t => (t.id === tag.toLowerCase() || t.id === '' ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
+        list = list.map(t => ((tag ? t.id === tag.toLowerCase() : !!t.key) ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
     }
   }
   return list
@@ -152,7 +152,7 @@ function item(body: string): { decision?: Section['decisions'][number]; topic?: 
   }
 }
 
-// `[thread:<id>] withdrawn <key>`, or bare `withdrawn <key>` in untagged text for a "No thread" decision.
+// `[thread:<id>] withdrawn <key>`, or bare `withdrawn <key>` in untagged text for a decision in a model-opened thread.
 const WITHDRAW = new RegExp(String.raw`^\s*(?:${TAG}[ \t]+)?withdrawn[ \t]+(\S+)[ \t]*$`, 'i')
 export const WITHDRAWN = '(withdrawn)'
 
@@ -227,7 +227,7 @@ export function apply(threads: Thread[], answer: string) {
   const { sections, closes, withdrawn } = parseAnswer(answer)
   // The thread with this key (any, for a thread item; an open one, for a decision), else a new one.
   const open = (key: string, title: string, live = false) => {
-    const known = key ? next.find(x => x.key === key && !(live && x.closed)) : undefined
+    const known = key ? (next.find(x => x.key === key && !x.closed) ?? (live ? undefined : next.find(x => x.key === key))) : undefined
     const t = known ?? get(mint(next))
     if (!known) Object.assign(t, { title, key })
     return t

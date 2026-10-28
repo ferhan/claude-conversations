@@ -643,6 +643,39 @@ test('transcript labels: a user row draws Thread labels in place of line-leading
   expect(seen).toEqual(['Thread AB · fix the build', 'The conversations plugin sent a message:\nThread AC · decide: k a (Yes)', 'no tag'])
 })
 
+test('dismiss: sends nothing, survives a re-register; new options reopen it', async ($, on) => {
+  const sent: string[] = []
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
+  on('ui.notify', () => ({ value: {} }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  let rows: { role: string; text: string; toolUses: unknown[] }[] = [...ROWS]
+  await start($, on, () => rows as never)
+  const reload = () => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const cards = async () => {
+    await $.command.run({ command: 'thread', args: 'a', ...RUN })
+    const pane = await $.ui.mount(PANE)
+    const open = !!(await pane.find({ key: 'opt:a:k1:a' }))
+    await pane.unmount()
+    return open
+  }
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'dismiss:a:k1' })
+  expect(await pane.find({ key: 'opt:a:k1:a' })).toBeUndefined()
+  await pane.unmount()
+  expect(sent).toEqual([])
+  await reload()
+  expect(await cards()).toBe(false)
+  // the model asks k1 again with new options: it reopens
+  rows = [...rows, { role: 'assistant', text: `[thread:a] again\n${DECISION.replace('  - b: No', '  - c: Later')}`, toolUses: [] }]
+  await reload()
+  expect(await cards()).toBe(true)
+  expect(sent).toEqual([])
+})
+
 test('dismiss: works on a thread card in the thread view', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   await start($, on)
