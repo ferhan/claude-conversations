@@ -297,7 +297,7 @@ export const register: Register = on => {
         return open ? l.map(x => (x.id === t.id ? { ...x, cards: x.cards.map(y => (y.key === c.key ? { ...y, answered: o.id } : y)) } : x)) : l
       })
       if (!open) return
-      await $.prompt.submit({ text: `${t.id ? `[thread:${t.id}] ` : ''}decide: ${c.key} ${o.id} (${o.label})` })
+      await $.prompt.submit({ text: `[thread:${t.id}] decide: ${c.key} ${o.id} (${o.label})` })
     }
     const ack = (t: Thread) => () => update($, acked, m => ({ ...m, [t.id]: t.sections.length }))
     // No reply bodies here: header, one status line, open cards. The full text stays in the transcript.

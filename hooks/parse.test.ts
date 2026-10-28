@@ -203,6 +203,12 @@ test('withdrawn: a decision retired live and on rebuild; new options reopen it',
   expect(apply(rebuild(rows), `[thread:ad] again\n${ask.replace('  - b: B', '  - c: C')}`).threads[0]!.cards[0]!.answered).toBe(null)
 })
 
+test('untagged decide: settles only the thread keyed like the card', () => {
+  const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes'])
+  const rows = [{ role: 'assistant', text: `${ask}` }, { role: 'assistant', text: item(['kind: thread', 'key: z', 'title: Z']) + '\n' + item(['kind: decision', 'key: g', 'thread: z', 'title: Z?', 'options:', '  - a: Yes']) }, { role: 'user', text: 'decide: g a (Yes)' }]
+  expect(rebuild(rows).map(t => [t.key, t.cards.map(c => c.answered)])).toEqual([['g', ['a']], ['z', [null]]])
+})
+
 test('withdrawn: a bare line inside a tagged section is only text', () => {
   const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes'])
   const out = apply(apply([], ask).threads, '[thread:ab] note\nwithdrawn g').threads

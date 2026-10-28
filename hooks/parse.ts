@@ -102,9 +102,9 @@ export function rebuild(rows: { role: string; text?: string; toolUses?: readonly
         list = list.map(t => (t.id === id ? { ...t, title: t.title || rest.split('\n')[0]!, closed: t.closed && !own } : t)) // a prompt to a closed thread reopens it
       }
       list = file(list, m.text).threads
-      // A decide keeps its card answered across a rebuild (a reload, --resume); an untagged one reaches every keyed (model-opened) thread.
+      // A decide keeps its card answered across a rebuild (a reload, --resume); an untagged one reaches the thread keyed like the card.
       for (const [, tag = '', key, opt] of m.text.matchAll(DECIDE))
-        list = list.map(t => ((tag ? t.id === tag.toLowerCase() : !!t.key) ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
+        list = list.map(t => ((tag ? t.id === tag.toLowerCase() : t.key === key) ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
     }
   }
   return list
