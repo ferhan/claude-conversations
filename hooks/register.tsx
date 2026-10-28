@@ -62,6 +62,7 @@ const COORDINATOR =
   'Use only tags from prompts you received; never make one up. ' +
   'To open a thread for a topic or a piece of work, emit a `thread-item` block with `kind: thread`, `key`, `title`, optional `body` and, when an agent does that work, `agent` set to the exact `description` you give the Agent tool; that agent\'s reports then arrive tagged with the thread. ' +
   "To put a decision in a thread you open, emit the `kind: thread` block and set `thread: <that block's key>` in the decision block; `thread:` takes a key, never a tag id. " +
+  'When a decision belongs to a thread already open, set `thread:` to that thread\'s key, which the prompt gives; a decision outside any tag with no `thread:` lands in No thread. ' +
   'A decision without `thread:` goes to the tagged section it sits in, or to No thread. Withdraw such a decision with `withdrawn <key>` before any tag. ' +
   'To retire a decision you no longer need answered, write `[thread:<id>] withdrawn <key>` on its own line, or `withdrawn <key>` before any tag for an untagged decision. ' +
   "Write `[thread:<id>] closed` on its own line only when the operator's prompt asks you to close that thread. " +
@@ -89,6 +90,11 @@ const startThread = async ($: EngineInterface, text: string) => {
   await update($, threads, l => [...l, { id: (id = mint(l)), title: text.split('\n')[0]!, key: '', sections: [], cards: [], closed: false }])
   await select($, id)
   return id
+}
+// A prompt from a model-opened thread carries its key, so a decision can name the thread with `thread:`.
+const withKey = async <E extends { context?: readonly string[] }>($: EngineInterface, e: E, id: string): Promise<E> => {
+  const key = (await read($, threads)).find(t => t.id === id)?.key
+  return key ? { ...e, context: [...(e.context ?? []), `Thread [thread:${id}] has key ${key}: set \`thread: ${key}\` on a decision that belongs to it.`] } : e
 }
 const pending = (t: Thread) => t.cards.some(c => c.answered === null)
 const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sections.length > (seen[t.id] ?? 0)
@@ -121,7 +127,7 @@ export const register: Register = on => {
     if (tag !== null && own) await update($, active, () => true)
     if (tag !== null) {
       if (own && (await read($, threads)).some(t => t.id === tag && t.closed)) await setClosed($, [tag], false)
-      return next(e)
+      return next(await withKey($, e, tag))
     }
     if (!own) {
       // An agent's notification or hand-back: file it into its bound thread and tag it so the reply lands there.
@@ -143,7 +149,7 @@ export const register: Register = on => {
     if ((await read($, threads)).some(t => t.id === id && t.closed)) await setClosed($, [id], false)
     await update($, threads, l => l.map(t => (t.id === id && !t.title ? { ...t, title: e.text.split('\n')[0]! } : t))) // whole first line: the band and list cut it to their width
     if (await isOpen($)) await openPane($) // retitle
-    return next({ ...e, text: `[thread:${id}] ${e.text}` })
+    return next(await withKey($, { ...e, text: `[thread:${id}] ${e.text}` }, id))
   })
 
   on('turn.complete', async ($, e, next) => {
