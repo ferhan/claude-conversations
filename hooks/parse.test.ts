@@ -156,16 +156,34 @@ test('agents: a notification binds by description and is filed; a hand-back befo
   expect(file(live.threads, HANDBACK('nobody')).thread).toBeUndefined()
 })
 
-test('No thread: an untagged decision goes to the "" thread and an untagged decide answers it on rebuild', () => {
+test('unfiled decision: opens a thread from its key and title; the same key joins it; an untagged decide answers it on rebuild', () => {
   const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes', '  - b: No'])
   const rows = [
     { role: 'assistant', text: `General question.\n${ask}` },
-    { role: 'user', text: 'The conversations plugin sent a message:\ndecide: g a (Yes)' },
+    { role: 'user', text: '[thread:a] decide: g a (Yes)' },
   ]
   const live = apply([], `General question.\n${ask}`)
-  expect(live.threads.map(t => [t.id, t.sections, t.cards.map(c => c.key)])).toEqual([['', [], ['g']]])
+  expect(live.threads.map(t => [t.id, t.key, t.title, t.cards.map(c => c.key)])).toEqual([['a', 'g', 'General?', ['g']]])
+  expect(live.threads.some(t => !t.id)).toBe(false) // nothing in No thread
   expect(live.fresh).toHaveLength(1)
+  const again = apply(live.threads, ask.replace('  - b: No', '  - c: Later'))
+  expect(again.threads.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['a', ['g']]])
+  expect(again.threads[0]!.cards[0]!.options.map(o => o.id)).toEqual(['a', 'c'])
   expect(rebuild(rows)[0]!.cards[0]!.answered).toBe('a')
+})
+
+test('unfiled decision: a closed thread with the key is not reused; a tagged section still wins', () => {
+  const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes'])
+  const shut = { id: 'q', title: 'G', key: 'g', sections: [], cards: [], closed: true }
+  expect(apply([shut], ask).threads.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', []], ['r', ['g']]])
+  expect(apply([], `[thread:ab] hi\n${ask}`).threads.map(t => t.id)).toEqual(['ab'])
+})
+
+test('unfiled decision: a valid thread: key is unchanged and opens nothing new', () => {
+  const ask = item(['kind: decision', 'key: g', 'title: General?', 'thread: x', 'options:', '  - a: Yes'])
+  const x = { id: 'q', title: 'X', key: 'x', sections: [], cards: [], closed: false }
+  const out = apply([x], ask).threads
+  expect(out.map(t => [t.id, t.cards.map(c => c.key)])).toEqual([['q', ['g']]])
 })
 
 test('withdrawn: a decision retired live and on rebuild; new options reopen it', () => {
@@ -180,31 +198,6 @@ test('withdrawn: a decision retired live and on rebuild; new options reopen it',
   expect(t.sections).toEqual(['question', 'superseded by the new plan']) // the withdrawn line is no reply text
   expect(apply(rebuild(rows), `[thread:ad] again\n${ask}`).threads[0]!.cards[0]!.answered).toBe(WITHDRAWN)
   expect(apply(rebuild(rows), `[thread:ad] again\n${ask.replace('  - b: B', '  - c: C')}`).threads[0]!.cards[0]!.answered).toBe(null)
-})
-
-test('No thread: a tagged decide for the same key also settles the untagged copy', () => {
-  const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes', '  - b: No'])
-  const list = rebuild([
-    { role: 'assistant', text: `General.\n${ask}` },
-    { role: 'assistant', text: `[thread:ab] here too\n${ask}` },
-    { role: 'user', text: '[thread:ab] decide: g a (Yes)' },
-  ])
-  expect(list.map(t => [t.id, t.cards[0]?.answered])).toEqual([
-    ['', 'a'],
-    ['ab', 'a'],
-  ])
-})
-
-test('withdrawn: a bare line in untagged text retires the No-thread copy, live and on rebuild', () => {
-  const ask = item(['kind: decision', 'key: g', 'title: General?', 'options:', '  - a: Yes', '  - b: No'])
-  const rows = [{ role: 'assistant', text: `General.\n${ask}` }]
-  const retire = 'Done as you said in chat.\nwithdrawn g\n[thread:ab] other news'
-  expect(apply(rebuild(rows), retire).threads.find(t => t.id === '')!.cards[0]!.answered).toBe(WITHDRAWN)
-  expect(rebuild([...rows, { role: 'assistant', text: retire }]).find(t => t.id === '')!.cards[0]!.answered).toBe(WITHDRAWN)
-  // Inside a tagged section a bare line is only text.
-  const inside = apply(rebuild(rows), '[thread:ab] note\nwithdrawn g').threads
-  expect(inside.find(t => t.id === '')!.cards[0]!.answered).toBe(null)
-  expect(inside.find(t => t.id === 'ab')!.sections).toEqual(['note\nwithdrawn g'])
 })
 
 test('gist: the status skips protocol-only lines and falls back to the previous reply', () => {
@@ -246,7 +239,7 @@ test('decision thread: names a thread by key, including one opened in the same r
   const ask = (t: string) => item(['kind: decision', 'key: d', 'title: Pick', 'thread: ' + t, 'options:', '  - a: One'])
   const named = apply([], `${open}\n${ask('x')}`).threads
   expect(named.filter(t => t.key).map(t => [t.id, t.key, t.cards.map(c => c.key)])).toEqual([['a', 'x', ['d']]])
-  expect(named.find(t => !t.id)!.cards).toEqual([])
+  expect(named.some(t => !t.id)).toBe(false)
   expect(named[0]!.cards[0] ?? named[1]!.cards[0]).not.toHaveProperty('thread')
   const q = { id: 'q', title: 'Q', key: 'q', sections: [], cards: [], closed: false }
   const lost = apply([q], `[thread:q] hi\n${ask('nope')}`).threads

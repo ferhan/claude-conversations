@@ -47,7 +47,7 @@ agent: Fix the login timeout
 ```
 ````
 
-A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision with `thread: <key>` goes to the open thread with that `key`, including one opened in the same reply; otherwise, or when that thread is closed or unknown, it goes to the tagged thread it sits in, and one outside any tag is listed under "No thread". An untagged `withdrawn <key>` retires that decision in "No thread" and in any thread opened by a thread item. A prompt you send in such a thread tells the model its `key`, so a later decision can name it with `thread:`.
+A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision with `thread: <key>` goes to the open thread with that `key`, including one opened in the same reply; otherwise, or when that thread is closed or unknown, it goes to the tagged thread it sits in, and one outside any tag opens a thread from its `key` and `title` (or joins the open thread with that `key`). An untagged `withdrawn <key>` retires that decision in "No thread" and in any thread opened by a thread item. A prompt you send in such a thread tells the model its `key`, so a later decision can name it with `thread:`.
 
 In the transcript each `thread-item` block is drawn as one line, `[+] thread-item: <title>`, that opens to the full block on a press; a line-leading `[thread:<id>]` is drawn as a `Thread AB ·` label, and a line that is only a tag and `resolved`, `stale`, `closed` or `withdrawn <key>` as one dim line. Only the drawing changes; the stored text keeps every tag and block.
 
