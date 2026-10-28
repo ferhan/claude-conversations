@@ -40,7 +40,7 @@ export function mint(threads: { id: string }[]): string {
 }
 
 const USER_TAG = new RegExp(String.raw`^\s*${TAG}[ \t]*([\s\S]*)$`)
-// The pane's own decide prompt, tagged or (for a "No thread" decision) not. A plugin-submitted prompt reaches the
+// The pane's own decide prompt, tagged or (from before 0.2.8) not. A plugin-submitted prompt reaches the
 // transcript wrapped ("The <plugin> plugin sent a message:\n[thread:ac] decide: ..."), so any line matches.
 const DECIDE = new RegExp(String.raw`^\s*(?:${TAG}[ \t]*)?decide:[ \t]+(\S+)[ \t]+(\S+)`, 'gm')
 
@@ -102,9 +102,9 @@ export function rebuild(rows: { role: string; text?: string; toolUses?: readonly
         list = list.map(t => (t.id === id ? { ...t, title: t.title || rest.split('\n')[0]!, closed: t.closed && !own } : t)) // a prompt to a closed thread reopens it
       }
       list = file(list, m.text).threads
-      // A decide keeps its card answered across a rebuild (a reload, --resume); it also settles a "No thread" copy of the key.
+      // A decide keeps its card answered across a rebuild (a reload, --resume); an untagged one reaches the thread keyed like the card.
       for (const [, tag = '', key, opt] of m.text.matchAll(DECIDE))
-        list = list.map(t => (t.id === tag.toLowerCase() || t.id === '' ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
+        list = list.map(t => ((tag ? t.id === tag.toLowerCase() : t.key === key) ? { ...t, cards: t.cards.map(c => (c.key === key ? { ...c, answered: opt! } : c)) } : t))
     }
   }
   return list
@@ -152,7 +152,7 @@ function item(body: string): { decision?: Section['decisions'][number]; topic?: 
   }
 }
 
-// `[thread:<id>] withdrawn <key>`, or bare `withdrawn <key>` in untagged text for a "No thread" decision.
+// `[thread:<id>] withdrawn <key>`, or bare `withdrawn <key>` in untagged text for a decision in a model-opened thread.
 const WITHDRAW = new RegExp(String.raw`^\s*(?:${TAG}[ \t]+)?withdrawn[ \t]+(\S+)[ \t]*$`, 'i')
 export const WITHDRAWN = '(withdrawn)'
 
@@ -215,7 +215,7 @@ export function parseAnswer(text: string): { sections: Section[]; closes: string
 }
 
 // Fold one assistant answer into the threads. Only a `[thread:<id>]` tag claims text: untagged text belongs to no thread,
-// but an untagged decision goes to the '' thread ("No thread") so it can still be answered.
+// but a decision with no thread opens one from its key and title (or joins the open one with that key) so it can still be answered.
 export function apply(threads: Thread[], answer: string) {
   const next = threads.map(t => ({ ...t, sections: [...t.sections], cards: [...t.cards] }))
   const fresh: { thread: Thread; card: ThreadCard }[] = []
@@ -225,6 +225,14 @@ export function apply(threads: Thread[], answer: string) {
     return t
   }
   const { sections, closes, withdrawn } = parseAnswer(answer)
+  // The thread with this key (any, for a thread item; an open one, for a decision), else a new one.
+  const open = (key: string, title: string, live = false) => {
+    const known = key ? (next.find(x => x.key === key && !x.closed) ?? (live ? undefined : next.find(x => x.key === key))) : undefined
+    const t = known ?? get(mint(next))
+    if (!known) Object.assign(t, { title, key })
+    return t
+  }
+  const home = (id: string, c: ThreadCard) => (id ? get(id) : open(c.key, c.title, true))
   const place = (t: Thread, c: ThreadCard) => {
     const i = t.cards.findIndex(x => x.key === c.key)
     const old = t.cards[i]
@@ -240,23 +248,20 @@ export function apply(threads: Thread[], answer: string) {
   const named: { thread: string; key: string; card: ThreadCard }[] = []
   for (const s of sections) {
     if (s.thread || s.decisions.length) {
-      const t = get(s.thread)
-      if (s.thread && s.text) t.sections.push(s.text)
+      if (s.thread && s.text) get(s.thread).sections.push(s.text)
       for (const { thread: key, ...c } of s.decisions) {
         if (key) named.push({ thread: s.thread, key, card: c })
-        else place(t, c)
+        else place(home(s.thread, c), c)
       }
     }
     for (const p of s.topics) {
-      const known = p.key ? next.find(x => x.key === p.key) : undefined
-      const t = known ?? get(mint(next))
-      if (!known) Object.assign(t, { title: p.title, key: p.key })
+      const t = open(p.key, p.title)
       if (p.agent) t.agent = p.agent
       if (p.body) t.sections.push(p.body)
     }
   }
   // `thread: <key>` names an open thread, opened this reply or before; otherwise the section's thread.
-  for (const n of named) place(next.find(x => x.key === n.key && !x.closed) ?? get(n.thread), n.card)
+  for (const n of named) place(next.find(x => x.key === n.key && !x.closed) ?? home(n.thread, n.card), n.card)
   for (const w of withdrawn)
     for (const t of next)
       // an untagged `withdrawn <key>` also reaches model-opened (keyed) threads

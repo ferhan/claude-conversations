@@ -47,15 +47,15 @@ agent: Fix the login timeout
 ```
 ````
 
-A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision with `thread: <key>` goes to the open thread with that `key`, including one opened in the same reply; otherwise, or when that thread is closed or unknown, it goes to the tagged thread it sits in, and one outside any tag is listed under "No thread". An untagged `withdrawn <key>` retires that decision in "No thread" and in any thread opened by a thread item. A prompt you send in such a thread tells the model its `key`, so a later decision can name it with `thread:`.
+A thread item creates a thread with the next free id, unless a thread with that `key` exists. A decision with `thread: <key>` goes to the open thread with that `key`, including one opened in the same reply; otherwise, or when that thread is closed or unknown, it goes to the tagged thread it sits in, and one outside any tag opens a thread from its `key` and `title` (or joins the open thread with that `key`). An untagged `withdrawn <key>` retires that decision in any thread opened by a thread item or by a decision. A prompt you send in such a thread tells the model its `key`, so a later decision can name it with `thread:`.
 
 In the transcript each `thread-item` block is drawn as one line, `[+] thread-item: <title>`, that opens to the full block on a press; a line-leading `[thread:<id>]` is drawn as a `Thread AB ·` label, and a line that is only a tag and `resolved`, `stale`, `closed` or `withdrawn <key>` as one dim line. Only the drawing changes; the stored text keeps every tag and block.
 
 ### Answers and protocol lines
 
-- Pressing an option sends `[thread:<id>] decide: <key> <option>` (untagged for a "No thread" decision). The card is marked answered at once and is not sent twice.
+- Pressing an option sends `[thread:<id>] decide: <key> <option>`. The card is marked answered at once and is not sent twice.
 - The model replies `[thread:<id>] resolved` after acting on it, or `[thread:<id>] stale` when the decision was already settled.
-- `[thread:<id>] withdrawn <key>` on its own line retires a decision; a bare `withdrawn <key>` before any tag retires a "No thread" one.
+- `[thread:<id>] withdrawn <key>` on its own line retires a decision; a bare `withdrawn <key>` before any tag retires one in a thread the model opened.
 - `[thread:<id>] closed` on its own line closes the thread.
 - A card's `dismiss` button drops a decision you do not want to answer: it is marked withdrawn, no prompt is sent, and it stays dismissed for the session.
 - Re-emitting a decision with the same `key` and the same options keeps its answer or dismissal; new options reopen it.
@@ -71,16 +71,15 @@ When a `kind: thread` item has an `agent` field equal to the `description` given
 | `/thread` | Open or close the pane |
 | `/thread <id>` | Select a thread (reopens it if closed); prompts are tagged with it |
 | `/thread none` | Clear the selection; prompts go untagged |
-| `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`), plus `No thread  [● N open]` for open untagged decisions |
+| `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`) |
 | `/thread new <message>` | Create and select a thread titled by the message, and put `[thread:<id>] <message>` in the prompt |
 | `/thread close <ids>` | Close one or more threads (`/thread <id> close` also works) |
-| `/thread close none` | Dismiss every open "No thread" decision (`/thread close no-thread` also works) |
 | `/thread show-band`, `/thread hide-band` | Show or hide the band |
 | `/thread view`, `/thread show-view`, `/thread hide-view` | Open the pane on the needs-you list, or close it |
 
 ## Band and pane
 
-The band above the prompt has one row per open thread: hotkey `1`-`9`, "Thread AB", the title cut to fit, and `needs answer` or `●` (unseen replies) at the end. Pressing a row selects the thread and opens the pane on it. `−` collapses the band to one summary line (`3 threads · 1 needs answer`), `+` expands it. The footer has `none`, `view` and a count of closed threads. Open "No thread" decisions get their own row, `No thread  3 need answer` (`1 needs answer` for one), which opens the needs-you list. With no open thread, none selected and no open "No thread" decision, the band shows one dim line instead: `No threads · /thread new <message> to start one`.
+The band above the prompt has one row per open thread: hotkey `1`-`9`, "Thread AB", the title cut to fit, and `needs answer` or `●` (unseen replies) at the end. Pressing a row selects the thread and opens the pane on it. `−` collapses the band to one summary line (`3 threads · 1 needs answer`), `+` expands it. The footer has `none`, `view` and a count of closed threads. With no open thread and none selected, the band shows one dim line instead: `No threads · /thread new <message> to start one`.
 
 The pane shows, per active thread, a header, one status line (`needs answer`, or `new:` with the first meaningful line of the latest reply and a `☐ seen` button) and the open decision cards. With no thread selected, or after `view`, it lists the threads that need you: open decisions first, then unseen replies. Reply bodies stay in the transcript. When the pane shows one thread, its header has a `Close thread` button: it closes the thread as `/thread close` does and the pane goes back to the needs-you list.
 

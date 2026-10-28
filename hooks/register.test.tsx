@@ -274,7 +274,7 @@ test('deliveries: a bound notification is tagged in its text, a hidden hand-back
   expect(got.at(-1)?.text.startsWith('<task-notification>')).toBe(true)
 })
 
-test('pane: an untagged decision shows under "No thread" and answers with an untagged decide', async ($, on) => {
+test('pane: an unfiled decision opens a thread and answers with a tagged decide', async ($, on) => {
   const sent: string[] = []
   on('prompt.submit', (_, e) => {
     sent.push(e.text)
@@ -287,13 +287,10 @@ test('pane: an untagged decision shows under "No thread" and answers with an unt
   })
   await start($, on, () => [{ role: 'assistant', text: `A general question.\n${DECISION.replace('key: k1', 'key: g')}` }])
   const ui = await $.ui.mount(PANE)
-  expect(await ui.find({ type: 'Text', text: /^No thread$/ })).toBeDefined()
-  await ui.press({ key: 'opt::g:a' })
-  expect(sent).toEqual(['decide: g a (Yes)'])
+  expect(await ui.find({ type: 'Text', text: /^No thread$/ })).toBeUndefined()
+  await ui.press({ key: 'opt:a:g:a' })
+  expect(sent).toEqual(['[thread:a] decide: g a (Yes)'])
   await ui.unmount()
-  const band = await $.ui.mount(BAND) // no thread row: the empty-band hint
-  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
-  await band.unmount()
 })
 
 test('pane: status skips a protocol-only latest reply', async ($, on) => {
@@ -646,55 +643,7 @@ test('transcript labels: a user row draws Thread labels in place of line-leading
   expect(seen).toEqual(['Thread AB · fix the build', 'The conversations plugin sent a message:\nThread AC · decide: k a (Yes)', 'no tag'])
 })
 
-const LOOSE = ['General question.', DECISION.replace('key: k1', 'key: g1'), DECISION.replace('key: k1', 'key: g2')].join('\n')
-
-test('No thread: the band shows a row for open untagged decisions, not the empty hint; list and summary count them; view alias', async ($, on) => {
-  on('ui.notify', () => ({ value: {} }) as never)
-  const opened: (string | undefined)[] = []
-  on('ui.open', (_, e) => {
-    opened.push(e.title)
-    return { value: { isPlaced: true } } as never
-  })
-  await start($, on, () => [])
-  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
-  let band = await $.ui.mount(BAND)
-  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
-  await band.unmount()
-  expect(await run('list')).toBe('No threads.')
-
-  await reply($, LOOSE)
-  band = await $.ui.mount(BAND)
-  expect(await band.find({ type: 'Text', text: /^No threads/ })).toBeUndefined()
-  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  2 need answer')
-  expect(await band.find({ key: 'collapse' })).toBeDefined()
-  await band.press({ key: 'loose' })
-  expect(opened.at(-1)).toBe('Threads')
-  await band.press({ key: 'collapse' })
-  expect((await band.find({ type: 'Text', text: /threads? ·/ }))?.text).toBe('0 threads · 1 needs answer')
-  await band.press({ key: 'expand' })
-  await band.unmount()
-  expect(await run('list')).toBe('- No thread  [● 2 open]')
-
-  expect(await run('view')).toBe('View shown.')
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ type: 'Text', text: /^No thread$/ })).toBeDefined()
-  await pane.unmount()
-
-  await reply($, 'Done.\nwithdrawn g1')
-  band = await $.ui.mount(BAND)
-  expect((await band.find({ key: 'loose' }))?.text).toBe('No thread  1 needs answer')
-  await band.unmount()
-
-  // The last one answered: the group leaves the band and the list.
-  await reply($, 'Done.\nwithdrawn g2')
-  band = await $.ui.mount(BAND)
-  expect(await band.find({ key: 'loose' })).toBeUndefined()
-  expect((await band.find({ type: 'Text', text: /^No threads/ }))?.text).toBe('No threads · /thread new <message> to start one')
-  await band.unmount()
-  expect(await run('list')).toBe('No threads.')
-})
-
-test('dismiss: hides the card, sends nothing, survives a re-register; close none clears the No-thread group; new options reopen', async ($, on) => {
+test('dismiss: sends nothing, survives a re-register; new options reopen it', async ($, on) => {
   const sent: string[] = []
   on('prompt.submit', (_, e) => {
     sent.push(e.text)
@@ -702,40 +651,28 @@ test('dismiss: hides the card, sends nothing, survives a re-register; close none
   })
   on('ui.notify', () => ({ value: {} }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
-  let rows: { role: string; text: string; toolUses: unknown[] }[] = [{ role: 'assistant', text: LOOSE, toolUses: [] }]
+  let rows: { role: string; text: string; toolUses: unknown[] }[] = [...ROWS]
   await start($, on, () => rows as never)
-  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
   const reload = () => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-
-  let pane = await $.ui.mount(PANE)
-  expect((await pane.find({ key: 'dismiss::g1' }))?.text).toBe('dismiss')
-  await pane.press({ key: 'dismiss::g1' })
-  expect(await pane.find({ key: 'opt::g1:a' })).toBeUndefined()
-  expect(await pane.find({ key: 'opt::g2:a' })).toBeDefined()
+  const cards = async () => {
+    await $.command.run({ command: 'thread', args: 'a', ...RUN })
+    const pane = await $.ui.mount(PANE)
+    const open = !!(await pane.find({ key: 'opt:a:k1:a' }))
+    await pane.unmount()
+    return open
+  }
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'dismiss:a:k1' })
+  expect(await pane.find({ key: 'opt:a:k1:a' })).toBeUndefined()
   await pane.unmount()
   expect(sent).toEqual([])
   await reload()
-  expect(await run('list')).toBe('- No thread  [● 1 open]')
-
-  expect(await run('close none')).toBe('No-thread decisions dismissed (1).')
-  expect(await run('list')).toBe('No threads.')
-  let band = await $.ui.mount(BAND)
-  expect(await band.find({ key: 'loose' })).toBeUndefined()
-  await band.unmount()
+  expect(await cards()).toBe(false)
+  // the model asks k1 again with new options: it reopens
+  rows = [...rows, { role: 'assistant', text: `[thread:a] again\n${DECISION.replace('  - b: No', '  - c: Later')}`, toolUses: [] }]
   await reload()
-  expect(await run('list')).toBe('No threads.')
-  expect(await run('close no-thread')).toBe('No-thread decisions dismissed (0).')
-
-  // The model asks g1 again with new options: it reopens, live and after a reload.
-  const again = DECISION.replace('key: k1', 'key: g1').replace('  - b: No', '  - c: Later')
-  await reply($, `Asking again.\n${again}`)
-  expect(await run('list')).toBe('- No thread  [● 1 open]')
-  rows = [...rows, { role: 'assistant', text: `Asking again.\n${again}`, toolUses: [] }]
-  await reload()
-  expect(await run('list')).toBe('- No thread  [● 1 open]')
-  band = await $.ui.mount(BAND)
-  expect(await band.find({ key: 'loose' })).toBeDefined()
-  await band.unmount()
+  expect(await cards()).toBe(true)
   expect(sent).toEqual([])
 })
 
