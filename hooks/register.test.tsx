@@ -406,6 +406,17 @@ test('/thread close: hides threads from band, list status and pane, survives a r
   await check()
 })
 
+test('/thread close all: closes every open thread, skips closed ones; none open replies No open threads.', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  await start($, on)
+  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
+  expect(await run('close all')).toBe('Thread A closed. Thread B closed.') // C was already closed
+  const lines = (await run('list'))!.split('\n')
+  expect(lines).toHaveLength(3)
+  expect(lines.map(l => l.endsWith('[closed]'))).toEqual([true, true, true])
+  expect(await run('close all')).toBe('No open threads.')
+})
+
 test('a tagged prompt to a closed thread reopens it, live and on rebuild; selecting it reopens it too', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   const typed: { role: string; text: string }[] = []
@@ -428,7 +439,7 @@ test('a tagged prompt to a closed thread reopens it, live and on rebuild; select
   expect(await open()).toEqual([false, true, false])
 })
 
-test('/thread show-band, hide-band, show-view, hide-view', async ($, on) => {
+test('/thread toggle-band, view on, view off', async ($, on) => {
   const opened: (string | undefined)[] = []
   const closed: string[] = []
   let open = false
@@ -455,20 +466,31 @@ test('/thread show-band, hide-band, show-view, hide-view', async ($, on) => {
     return has
   }
   expect(await band()).toBe(true)
-  expect(await run('hide-band')).toBe('Band hidden.')
+  expect(await run('toggle-band')).toBe('Band hidden.')
   expect(await band()).toBe(false)
-  expect(await run('show-band')).toBe('Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.')
+  expect(await run('toggle-band')).toBe('Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.')
+  expect(await band()).toBe(true)
+  await run('hide-band') // removed: no longer changes the band
+  await run('show-band')
+  expect(await band()).toBe(true)
+  await run('toggle-band')
+  await run('show-band')
+  expect(await band()).toBe(false)
+  await run('toggle-band')
   expect(await band()).toBe(true)
 
-  await run('a') // a thread view first: show-view must turn it to the needs-you list
-  expect(await run('show-view')).toBe('View shown.')
+  expect(await run('view')).toBe('Usage: /thread view on|off')
+  expect(opened).toEqual([])
+  await run('a') // a thread view first: view on must turn it to the needs-you list
+  opened.length = 0
+  expect(await run('view on')).toBe('View shown.')
   expect(opened.at(-1)).toBe('Threads')
   const pane = await $.ui.mount(PANE)
   expect((await pane.findAll({ type: 'Text', text: /^Thread / })).map(x => x.text)).toEqual(['Thread A · decide the thing', 'Thread B · run the build'])
   await pane.unmount()
-  expect(await run('hide-view')).toBe('View hidden.')
+  expect(await run('view off')).toBe('View hidden.')
   expect(closed).toEqual(['thread-pane'])
-  expect(await run('hide-view')).toBe('View hidden.')
+  expect(await run('view off')).toBe('View hidden.')
   expect(closed).toEqual(['thread-pane']) // already closed: nothing more to close
 })
 
@@ -519,9 +541,9 @@ test('band: the empty-band hint shows with no threads, not when hidden, not once
     return t
   }
   expect(await text()).toEqual(['No threads · /thread new <message> to start one'])
-  await run('hide-band')
+  await run('toggle-band')
   expect(await text()).toEqual(['engine'])
-  await run('show-band')
+  await run('toggle-band')
   await run('new first')
   expect((await text()).some(t => t.startsWith('No threads'))).toBe(false)
 })

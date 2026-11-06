@@ -101,7 +101,7 @@ const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sec
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some, none, or show/hide the band and the view', argumentHint: '[letters | list | none | new <message> | close <ids> | show-band | hide-band | view | show-view | hide-view]' })
+    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some or all, none, toggle the band, or turn the view on or off', argumentHint: '[letters | list | none | new <message> | close <ids|all> | toggle-band | view on | view off]' })
     // --resume: rebuild threads from the tagged user and assistant rows already in the transcript.
     const shut = await read($, closedIds)
     const rows = await $.session.messages()
@@ -175,20 +175,21 @@ export const register: Register = on => {
       await openPane($)
       return { text: 'Thread pane opened.' }
     }
-    if (arg === 'show-band' || arg === 'hide-band') {
-      await update($, bandHidden, () => arg === 'hide-band')
+    if (arg === 'toggle-band') {
+      await update($, bandHidden, v => !v)
       // No API expands a band the engine collapsed (its `[-]`, ctrl+x ctrl+a): only the person can.
-      return { text: arg === 'hide-band' ? 'Band hidden.' : 'Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.' }
+      return { text: (await read($, bandHidden)) ? 'Band hidden.' : 'Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.' }
     }
-    if (arg === 'show-view' || arg === 'view') {
+    if (arg === 'view on') {
       await update($, shown, () => null)
       await openPane($)
       return { text: 'View shown.' }
     }
-    if (arg === 'hide-view') {
+    if (arg === 'view off') {
       if (await isOpen($)) await $.ui.close({ id: PANE })
       return { text: 'View hidden.' }
     }
+    if (arg === 'view') return { text: 'Usage: /thread view on|off' }
     if (arg === 'none') {
       await select($, null)
       return { text: 'Prompts go untagged.' }
@@ -207,6 +208,13 @@ export const register: Register = on => {
       const id = await startThread($, text)
       await $.prompt.fill({ text: `[thread:${id}] ${text}` })
       return { text: `Thread ${label(id)} started: press Enter to send.` }
+    }
+    // shortcut: a thread with the id `all` (the 1000th) cannot be closed as `close all`, upgrade if that many threads become plausible
+    if (arg === 'close all') {
+      const open = (await read($, threads)).filter(t => t.id && !t.closed).map(t => t.id)
+      if (!open.length) return { text: 'No open threads.' }
+      await closeThreads($, open)
+      return { text: open.map(i => `Thread ${label(i)} closed.`).join(' ') }
     }
     const words = arg.split(/\s+/)
     // `/thread close a b`, or `/thread a close` as first typed.
