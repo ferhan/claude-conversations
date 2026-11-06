@@ -336,7 +336,6 @@ export const register: Register = on => {
           .map(c => (
             <Box key={`card:${t.id}:${c.key}`} flexDirection="column" borderStyle="round" paddingX={1}>
               <Text bold>{c.title}</Text>
-              {c.description ? <Text>{c.description}</Text> : null}
               <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
                 {c.options.map(o => (
                   <Button
@@ -348,6 +347,8 @@ export const register: Register = on => {
                 ))}
                 <Button key={`dismiss:${t.id}:${c.key}`} label="dismiss" onPress={() => dismiss($, (x, y) => x.id === t.id && y.key === c.key)} />
               </Box>
+              {/* below the options: the pane opens unfocused and cannot scroll, so a long description must not push them out of its window */}
+              {c.description ? <Text>{c.description}</Text> : null}
             </Box>
           ))}
       </Box>

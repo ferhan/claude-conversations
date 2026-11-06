@@ -726,3 +726,18 @@ test('a prompt in a model-opened thread carries its key as context; one in a key
   await $.prompt.submit({ text: 'go on', origin: { kind: 'composer' } } as never)
   expect(got.at(-1)).toEqual({ text: '[thread:d] go on', context: ['Thread [thread:d] has key w: set `thread: w` on a decision that belongs to it.'] })
 })
+
+test('pane: a card draws its options above a long description, so an unfocused pane window still shows them', async ($, on) => {
+  on('ui.notify', () => ({ value: {} }) as never)
+  await start($, on, () => [])
+  const desc = 'After PR 3129 merges, the backend refuses to boot without the salt. Option a: go; I dispatch D1a and D1b. Option b: D1a only. Option c: hold everything. '.repeat(5)
+  const block = ['```thread-item', 'kind: decision', 'key: gate-d1-salt', 'thread: plaid-duplicate-gate', 'title: D1: provision the fingerprint salt before the gate merges', `description: ${desc}`, 'options:', '  - a: Dispatch D1a and D1b, gate merges last', '  - b: D1a only, gate waits', '  - c: Hold', 'recommendation: a', '```'].join('\n')
+  await reply($, `Gate status.\n\n${block}`)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn())
+  const at = (s: string) => drawn.indexOf(s)
+  expect(['a', 'b', 'c'].map(o => at(`opt:a:gate-d1-salt:${o}`) >= 0)).toEqual([true, true, true])
+  expect(at('D1: provision the fingerprint salt')).toBeLessThan(at('opt:a:gate-d1-salt:a'))
+  expect(at('dismiss:a:gate-d1-salt')).toBeLessThan(at('After PR 3129 merges')) // the whole option row precedes the description
+  await ui.unmount()
+})
