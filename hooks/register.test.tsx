@@ -540,7 +540,8 @@ test('band: the empty-band hint shows with no threads, not when hidden, not once
     await ui.unmount()
     return t
   }
-  expect(await text()).toEqual(['No threads · /thread new <message> to start one'])
+  // `engine` is another plugin's part: the engine stacks every plugin's AbovePrompt, so the hint sits beside it.
+  expect(await text()).toEqual(['No threads · /thread new <message> to start one', 'engine'])
   await run('toggle-band')
   expect(await text()).toEqual(['engine'])
   await run('toggle-band')
