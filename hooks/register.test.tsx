@@ -98,7 +98,7 @@ const BAND = {
   plugin: 'conversations',
   component: 'AbovePrompt',
   surface: 'terminal',
-  props: { hasSurvey: false, isWorking: false, maxRows: 8, bodyColumns: 80, scroll: { offset: 0, bodyRows: 7 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 8, bodyColumns: 80, scroll: { offset: 0, bodyRows: 7 }, view: {} },
 } as const
 
 test('band: one row per open thread with full titles and status; collapse to a summary and back', async ($, on) => {
@@ -691,7 +691,7 @@ test('dismiss: sends nothing, survives a re-register; new options reopen it', as
   })
   on('ui.notify', () => ({ value: {} }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
-  let rows: { role: string; text: string; toolUses: unknown[] }[] = [...ROWS]
+  let rows: { role: string; text: string; toolUses?: unknown[] }[] = [...ROWS]
   await start($, on, () => rows as never)
   const reload = () => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const cards = async () => {
