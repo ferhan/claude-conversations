@@ -74,7 +74,7 @@ When a `kind: thread` item has an `agent` field equal to the `description` given
 | `/thread list` | One line per thread with its status (`●` needs an answer, `answered`, `open`, `closed`) |
 | `/thread new <message>` | Create and select a thread titled by the message, and put `[thread:<id>] <message>` in the prompt |
 | `/thread close <ids>` | Close one or more threads (`/thread <id> close` also works) |
-| `/thread close all` | Close every open thread; `all` is reserved and cannot be a thread id (`[thread:all]` stays plain text) |
+| `/thread close all` | Close every open thread. `all` and the subcommand words `close`, `list`, `new`, `none`, `view` are reserved: they are never minted as a thread id, and `[thread:<word>]` stays plain text |
 | `/thread toggle-band` | Hide the band, or show it again |
 | `/thread view on`, `/thread view off` | Open the pane on the needs-you list, or close it |
 

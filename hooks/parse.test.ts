@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apply, file, gist, labelled, letters, parts, relabel, mint, tagOf, parseAnswer, rebuild, WITHDRAWN } from './parse'
+import { apply, file, gist, labelled, letters, parts, relabel, mint, tagOf, parseAnswer, rebuild, RESERVED, WITHDRAWN } from './parse'
 
 const ANSWER = [
   '[thread:a] Thread A: the migration plan is ready.',
@@ -292,4 +292,29 @@ test('decision thread: an untagged withdrawn <key> retires a decision placed on 
   const body = item(['kind: thread', 'key: ka', 'title: K', 'body: B'])
   const a = { id: 'a', title: 'A', key: 'ka', sections: [], cards: [], closed: false }
   expect(apply([a], `[thread:a] hi\n${body}`).threads[0]!.sections).toEqual(['hi', 'B'])
+})
+
+test('reserved ids: the list holds every letters-only /thread subcommand word and all', () => {
+  expect([...RESERVED].sort()).toEqual(['all', 'close', 'list', 'new', 'none', 'view'])
+})
+
+test('mint: never returns a reserved id, called at the neighbour of each', () => {
+  for (const w of RESERVED) {
+    const i = [...w].reduce((n, c) => n * 26 + c.charCodeAt(0) - 96, 0) - 1 // the word's own index
+    expect(letters(i)).toBe(w) // guard: the word is reached
+    const id = mint([{ id: letters(i - 1) }])
+    expect(RESERVED).not.toContain(id)
+    expect(id).toBe(letters(i + 1))
+  }
+})
+
+test('reserved ids: [thread:<word>] in any case is plain text; near-misses are still tags', () => {
+  const ids = (text: string) => rebuild([{ role: 'user', text }, { role: 'assistant', text }]).map(t => t.id)
+  expect(ids('[thread:a] hi')).toEqual(['a']) // guard: a normal thread is there
+  for (const w of RESERVED)
+    for (const tag of [w, w.toUpperCase(), w[0]!.toUpperCase() + w.slice(1)]) {
+      expect(ids(`[thread:${tag}] x\n[thread:b] y`)).toEqual(['b'])
+      expect(tagOf(`[thread:${tag}] hi`)).toBe(null)
+    }
+  expect(ids('[thread:news] x\n[thread:lists] y\n[thread:viewer] z\n[thread:allow] w\n[thread:closer] v\n[thread:nonet] u')).toEqual(['news', 'lists', 'viewer', 'allow', 'closer', 'nonet'])
 })
