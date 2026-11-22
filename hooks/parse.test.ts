@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apply, file, gist, labelled, letters, parts, relabel, mint, parseAnswer, rebuild, WITHDRAWN } from './parse'
+import { apply, file, gist, labelled, letters, parts, relabel, mint, tagOf, parseAnswer, rebuild, WITHDRAWN } from './parse'
 
 const ANSWER = [
   '[thread:a] Thread A: the migration plan is ready.',
@@ -67,6 +67,21 @@ test('rebuild: user prompt opens and titles the thread; minting continues after 
   const two = rebuild([...rows, { role: 'user', text: '[thread:b] second' }])
   expect(mint(two)).toBe('c')
   expect(mint(rebuild([{ role: 'user', text: '[thread:b] x' }]))).toBe('c')
+})
+
+test('reserved id: [thread:all] in any case is plain text, in a user row and an assistant row; allow and ball are tags', () => {
+  const ids = (text: string) => rebuild([{ role: 'user', text }, { role: 'assistant', text }]).map(t => t.id)
+  expect(ids('[thread:a] hi\n[thread:all] x')).toEqual(['a']) // guard: the normal thread is there
+  for (const tag of ['all', 'ALL', 'All']) expect(ids(`[thread:${tag}] x\n[thread:b] y`)).toEqual(['b'])
+  expect(rebuild([{ role: 'user', text: '[thread:ALL] x' }, { role: 'assistant', text: '[thread:all] y\n[thread:all] closed' }])).toEqual([])
+  expect(tagOf('[thread:a] hi')).toBe('a')
+  for (const tag of ['all', 'ALL', 'All']) expect(tagOf(`[thread:${tag}] hi`)).toBe(tagOf('hi'))
+  expect(ids('[thread:allow] x\n[thread:ball] y\n[thread:alls] z')).toEqual(['allow', 'ball', 'alls'])
+})
+
+test('mint: never returns the reserved id all', () => {
+  expect(mint([{ id: 'alj' }])).toBe('alk') // guard: the neighbour is minted
+  expect(mint([{ id: 'alk' }])).toBe('alm')
 })
 
 test('answered: a decide prompt survives rebuild; same options keep it, new options reopen', () => {

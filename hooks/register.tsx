@@ -209,7 +209,6 @@ export const register: Register = on => {
       await $.prompt.fill({ text: `[thread:${id}] ${text}` })
       return { text: `Thread ${label(id)} started: press Enter to send.` }
     }
-    // shortcut: a thread with the id `all` (the 1000th) cannot be closed as `close all`, upgrade if that many threads become plausible
     const words = arg.split(/\s+/)
     if (words[0] === 'close' && words[1] === 'all') {
       if (words.length > 2) return { text: 'Usage: /thread close <ids|all>' }

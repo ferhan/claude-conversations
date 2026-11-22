@@ -13,9 +13,9 @@ export type Section = {
 
 const OPEN = /^ {0,3}(`{3,}|~{3,})[ \t]*([^`\s]*)[^`]*$/
 const CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/
-// A tag: `[thread:<letters>]`.
-const TAG = String.raw`\[thread:([A-Za-z]+)\]`
-const ANY_TAG = String.raw`\[thread:[A-Za-z]+\]`
+// A tag: `[thread:<letters>]`. `all` is reserved for `/thread close all`, so it never matches and stays plain text.
+const TAG = String.raw`\[thread:(?![Aa][Ll][Ll]\])([A-Za-z]+)\]`
+const ANY_TAG = String.raw`\[thread:(?![Aa][Ll][Ll]\])[A-Za-z]+\]`
 const ITEM = ['thread-item'] // the block info string
 const SECTION = new RegExp(String.raw`^\s*${TAG}`)
 export const tagOf = (text: string) => SECTION.exec(text)?.[1]!.toLowerCase() ?? null // the leading tag's id
@@ -36,7 +36,8 @@ export const label = (id: string) => id.toUpperCase()
 const num = (id: string) => [...id].reduce((n, c) => n * 26 + c.charCodeAt(0) - 96, 0) - 1 // inverse of letters
 // The client mints thread ids, never the coordinator: the one after the highest seen (a, b, ... z, aa ...).
 export function mint(threads: { id: string }[]): string {
-  return letters(Math.max(-1, ...threads.map(t => num(t.id))) + 1)
+  const id = letters(Math.max(-1, ...threads.map(t => num(t.id))) + 1)
+  return id === 'all' ? letters(num(id) + 1) : id // `all` is reserved
 }
 
 const USER_TAG = new RegExp(String.raw`^\s*${TAG}[ \t]*([\s\S]*)$`)
