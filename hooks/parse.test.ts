@@ -231,6 +231,11 @@ test('withdrawn: a bare line inside a tagged section is only text', () => {
   expect(out.find(t => t.id === 'ab')!.sections).toEqual(['note\nwithdrawn g'])
 })
 
+test('gist: a bare [thread:all] is plain text, so it is the status line; a bare real tag is skipped', () => {
+  expect(gist(['[thread:a]'])).toBe('') // guard: a real bare tag is protocol-only
+  expect(gist(['[thread:all]'])).toBe('[thread:all]')
+})
+
 test('gist: the status skips protocol-only lines and falls back to the previous reply', () => {
   expect(gist(['first reply', 'resolved\n\nThe count is running from 11 to 20.'])).toBe('The count is running from 11 to 20.')
   expect(gist(['earlier news', 'resolved', 'stale.', '', '[thread:ad]', 'withdrawn untagged-decisions\nclosed'])).toBe('earlier news')
