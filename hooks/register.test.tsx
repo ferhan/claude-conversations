@@ -869,3 +869,24 @@ test('prompt.submit: a failure while tagging lets the prompt through unchanged; 
   expect(got.at(-1)).toBe('again')
   expect(r.text).toBe('again')
 })
+
+test('prompt.submit: a failure before the prompt is tagged leaves a closed selected thread closed', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  let broken = false
+  let rows = ROWS
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await start($, on, () => rows, () => {
+    if (broken) throw new Error('panes unavailable')
+    return []
+  })
+  const list = async () => ((await $.command.run({ command: 'thread', args: 'list', ...RUN })).text ?? '').split('\n')
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  rows = [...ROWS, { role: 'assistant', text: '[thread:a] closed' }]
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true }) // thread A is selected and now closed
+  const before = await list()
+  expect(before[0]).toBe('- Thread A  decide the thing  [closed]')
+  broken = true
+  const r = await $.prompt.submit({ text: 'again', origin: { kind: 'composer' } } as never)
+  expect(r.text).toBe('again') // untagged, so the thread must not have been reopened
+  expect(await list()).toEqual(before)
+})

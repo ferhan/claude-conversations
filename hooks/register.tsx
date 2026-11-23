@@ -131,10 +131,11 @@ export const register: Register = on => {
     if (e.command) return next(e)
     const own = OWN.includes(e.origin.kind)
     const tag = tagOf(e.text)
-    if (tag !== null && own) await update($, active, () => true)
     if (tag !== null) {
+      const tagged = await withKey($, e, tag) // before any write: a failure must leave the thread state untouched
+      if (own) await update($, active, () => true)
       if (own && (await read($, threads)).some(t => t.id === tag && t.closed)) await setClosed($, [tag], false)
-      return next(await withKey($, e, tag))
+      return next(tagged)
     }
     if (!own) {
       // An agent's notification or hand-back: file it into its bound thread and tag it so the reply lands there.
@@ -152,11 +153,14 @@ export const register: Register = on => {
     }
     const id = await read($, selected)
     if (!id) return next(e)
+    // Fallible reads first: a failure must leave the thread state untouched. openPane stays after the retitle it redraws.
+    const open = await isOpen($)
+    const tagged = await withKey($, { ...e, text: `[thread:${id}] ${e.text}` }, id)
     await update($, active, () => true)
     if ((await read($, threads)).some(t => t.id === id && t.closed)) await setClosed($, [id], false)
     await update($, threads, l => l.map(t => (t.id === id && !t.title ? { ...t, title: e.text.split('\n')[0]! } : t))) // whole first line: the band and list cut it to their width
-    if (await isOpen($)) await openPane($) // retitle
-    return next(await withKey($, { ...e, text: `[thread:${id}] ${e.text}` }, id))
+    if (open) await openPane($) // retitle
+    return next(tagged)
   }).catch(async ($, e, next) => next(e)) // fail open: a tagging failure never blocks or loses the prompt
 
   on('turn.complete', async ($, e, next) => {
