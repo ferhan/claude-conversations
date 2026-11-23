@@ -848,3 +848,24 @@ test('pane: a card draws its options above a long description, so an unfocused p
   expect(at('dismiss:a:gate-d1-salt')).toBeLessThan(at('After PR 3129 merges')) // the whole option row precedes the description
   await ui.unmount()
 })
+
+test('prompt.submit: a failure while tagging lets the prompt through unchanged; the normal path still tags it', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  let broken = false
+  const got: string[] = []
+  on('prompt.submit', (_, e) => {
+    got.push(e.text)
+    return { text: e.text }
+  })
+  await start($, on, () => ROWS, () => {
+    if (broken) throw new Error('panes unavailable') // the selected-thread path asks ui.panes, inside the handler
+    return []
+  })
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  await $.prompt.submit({ text: 'go on', origin: { kind: 'composer' } } as never)
+  expect(got.at(-1)).toBe('[thread:a] go on')
+  broken = true
+  const r = await $.prompt.submit({ text: 'again', origin: { kind: 'composer' } } as never)
+  expect(got.at(-1)).toBe('again')
+  expect(r.text).toBe('again')
+})

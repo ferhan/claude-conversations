@@ -157,7 +157,7 @@ export const register: Register = on => {
     await update($, threads, l => l.map(t => (t.id === id && !t.title ? { ...t, title: e.text.split('\n')[0]! } : t))) // whole first line: the band and list cut it to their width
     if (await isOpen($)) await openPane($) // retitle
     return next(await withKey($, { ...e, text: `[thread:${id}] ${e.text}` }, id))
-  })
+  }).catch(async ($, e, next) => next(e)) // fail open: a tagging failure never blocks or loses the prompt
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId && e.answer) {
