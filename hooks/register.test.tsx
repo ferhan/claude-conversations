@@ -890,3 +890,47 @@ test('prompt.submit: a failure before the prompt is tagged leaves a closed selec
   expect(r.text).toBe('again') // untagged, so the thread must not have been reopened
   expect(await list()).toEqual(before)
 })
+
+const UNTITLED = [{ role: 'user', text: '[thread:a]' }, { role: 'assistant', text: '[thread:a] hi' }]
+
+test('prompt.submit: a failure before the prompt is tagged leaves an untitled selected thread untitled', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  let broken = false
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await start($, on, () => UNTITLED as never, () => {
+    if (broken) throw new Error('panes unavailable')
+    return []
+  })
+  const list = async () => ((await $.command.run({ command: 'thread', args: 'list', ...RUN })).text ?? '')
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  expect(await list()).toContain('untitled') // non-empty guard: the thread starts untitled
+  broken = true
+  const r = await $.prompt.submit({ text: 'first line\nmore', origin: { kind: 'composer' } } as never)
+  expect(r.text).toBe('first line\nmore')
+  expect(await list()).toContain('untitled')
+})
+
+const submitUntitled = async ($: $T, on: OnT, panes: { id: string }[]) => {
+  const titles: string[] = []
+  on('ui.open', (_, e) => {
+    titles.push(e.title ?? '')
+    return { value: { isPlaced: true } } as never
+  })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await start($, on, () => UNTITLED as never, () => panes)
+  await $.command.run({ command: 'thread', args: 'a', ...RUN })
+  titles.length = 0 // selecting opens the pane; only the submit is under test
+  await $.prompt.submit({ text: 'first line\nmore', origin: { kind: 'composer' } } as never)
+  return titles
+}
+
+test('prompt.submit: the pane is not redrawn when it is not open', async ($, on) => {
+  const titles = await submitUntitled($, on, [])
+  const text = (await $.command.run({ command: 'thread', args: 'list', ...RUN })).text ?? ''
+  expect(text).toContain('first line') // the submit ran and retitled the thread
+  expect(titles).toEqual([])
+})
+
+test('prompt.submit: an open pane is redrawn after the thread is retitled', async ($, on) => {
+  expect(await submitUntitled($, on, [{ id: 'thread-pane' }])).toEqual(['Thread A · first line'])
+})
