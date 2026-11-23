@@ -209,14 +209,14 @@ export const register: Register = on => {
       await $.prompt.fill({ text: `[thread:${id}] ${text}` })
       return { text: `Thread ${label(id)} started: press Enter to send.` }
     }
-    // shortcut: a thread with the id `all` (the 1000th) cannot be closed as `close all`, upgrade if that many threads become plausible
-    if (arg === 'close all') {
+    const words = arg.split(/\s+/)
+    if (words[0] === 'close' && words[1] === 'all') {
+      if (words.length > 2) return { text: 'Usage: /thread close <ids|all>' }
       const open = (await read($, threads)).filter(t => t.id && !t.closed).map(t => t.id)
       if (!open.length) return { text: 'No open threads.' }
       await closeThreads($, open)
       return { text: open.map(i => `Thread ${label(i)} closed.`).join(' ') }
     }
-    const words = arg.split(/\s+/)
     // `/thread close a b`, or `/thread a close` as first typed.
     const ids = words[0] === 'close' ? words.slice(1) : words[1] === 'close' && words.length === 2 ? [words[0]!] : null
     if (ids) {

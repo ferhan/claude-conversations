@@ -417,6 +417,24 @@ test('/thread close all: closes every open thread, skips closed ones; none open 
   expect(await run('close all')).toBe('No open threads.')
 })
 
+test('/thread close all: extra whitespace does not matter', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  await start($, on)
+  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
+  expect(await run('  close   all  ')).toBe('Thread A closed. Thread B closed.')
+  expect(await run('close  all')).toBe('No open threads.')
+})
+
+test('/thread close all x: usage error, closes nothing', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  await start($, on)
+  const run = async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text
+  expect(await run('close all x')).toBe('Usage: /thread close <ids|all>')
+  const lines = (await run('list'))!.split('\n')
+  expect(lines).toHaveLength(3)
+  expect(lines.map(l => l.endsWith('[closed]'))).toEqual([false, false, true]) // A and B still open
+})
+
 test('a tagged prompt to a closed thread reopens it, live and on rebuild; selecting it reopens it too', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   const typed: { role: string; text: string }[] = []
