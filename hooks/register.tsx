@@ -99,9 +99,16 @@ const withKey = async <E extends { context?: readonly string[] }>($: EngineInter
 const pending = (t: Thread) => t.cards.some(c => c.answered === null)
 const unseen = (t: Thread, seen: Record<string, number>) => !pending(t) && t.sections.length > (seen[t.id] ?? 0)
 
+const USAGE = new Map([
+  ['toggle-band', 'Usage: /thread toggle-band'],
+  ['view', 'Usage: /thread view on|off'],
+  ['none', 'Usage: /thread none'],
+  ['list', 'Usage: /thread list'],
+])
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some or all, none, toggle the band, or turn the view on or off', argumentHint: '[letters | list | none | new <message> | close <ids|all> | toggle-band | view on | view off]' })
+    await $.command.register({ name: 'thread', description: 'Threads: toggle the pane, list threads, start one with a message, select one, close some or all, none, toggle the band, or turn the view on or off', argumentHint: '[letters | list | none | new <message> | close <ids|all> | <letters> close | toggle-band | view on | view off]' })
     // --resume: rebuild threads from the tagged user and assistant rows already in the transcript.
     const shut = await read($, closedIds)
     const rows = await $.session.messages()
@@ -175,21 +182,24 @@ export const register: Register = on => {
       await openPane($)
       return { text: 'Thread pane opened.' }
     }
+    const words = arg.split(/\s+/)
+    // A known subcommand with unexpected arguments replies its usage and changes nothing.
+    const usage = USAGE.get(words[0]!)
+    if (usage && !(words[0] === 'view' ? words.length === 2 && (words[1] === 'on' || words[1] === 'off') : words.length === 1)) return { text: usage }
     if (arg === 'toggle-band') {
       await update($, bandHidden, v => !v)
       // No API expands a band the engine collapsed (its `[-]`, ctrl+x ctrl+a): only the person can.
       return { text: (await read($, bandHidden)) ? 'Band hidden.' : 'Band shown. If it is still hidden, Claude Code collapsed it: press ctrl+x ctrl+a.' }
     }
-    if (arg === 'view on') {
+    if (words[0] === 'view' && words[1] === 'on') {
       await update($, shown, () => null)
       await openPane($)
       return { text: 'View shown.' }
     }
-    if (arg === 'view off') {
+    if (words[0] === 'view' && words[1] === 'off') {
       if (await isOpen($)) await $.ui.close({ id: PANE })
       return { text: 'View hidden.' }
     }
-    if (arg === 'view') return { text: 'Usage: /thread view on|off' }
     if (arg === 'none') {
       await select($, null)
       return { text: 'Prompts go untagged.' }
@@ -201,7 +211,7 @@ export const register: Register = on => {
       const lines = all.map(t => `- Thread ${label(t.id)}  ${cut(t.title || 'untitled', room)}  [${t.closed ? 'closed' : pending(t) ? '●' : t.cards.length ? 'answered' : 'open'}]`)
       return { text: lines.join('\n') || 'No threads.' }
     }
-    if (arg === 'new' || arg.startsWith('new ')) {
+    if (words[0] === 'new') {
       const text = raw.slice(3).trim()
       if (!text) return { text: 'Usage: /thread new <message>' }
       // The host refuses $.prompt.submit from a command.run (and a prompt.submit) hook, so the message becomes the draft.
@@ -209,7 +219,6 @@ export const register: Register = on => {
       await $.prompt.fill({ text: `[thread:${id}] ${text}` })
       return { text: `Thread ${label(id)} started: press Enter to send.` }
     }
-    const words = arg.split(/\s+/)
     if (words[0] === 'close' && words[1] === 'all') {
       if (words.length > 2) return { text: 'Usage: /thread close <ids|all>' }
       const open = (await read($, threads)).filter(t => t.id && !t.closed).map(t => t.id)
@@ -220,7 +229,7 @@ export const register: Register = on => {
     // `/thread close a b`, or `/thread a close` as first typed.
     const ids = words[0] === 'close' ? words.slice(1) : words[1] === 'close' && words.length === 2 ? [words[0]!] : null
     if (ids) {
-      if (!ids.length) return { text: 'Usage: /thread close <ids>' }
+      if (!ids.length) return { text: 'Usage: /thread close <ids|all>' }
       const known = await closeThreads($, ids)
       return { text: ids.map(i => (known.includes(i) ? `Thread ${label(i)} closed.` : `No thread ${label(i)}.`)).join(' ') }
     }

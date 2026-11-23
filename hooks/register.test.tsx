@@ -98,7 +98,7 @@ const BAND = {
   plugin: 'conversations',
   component: 'AbovePrompt',
   surface: 'terminal',
-  props: { hasSurvey: false, isWorking: false, maxRows: 8, bodyColumns: 80, scroll: { offset: 0, bodyRows: 7 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 8, bodyColumns: 80, scroll: { offset: 0, bodyRows: 7 }, view: {} },
 } as const
 
 test('band: one row per open thread with full titles and status; collapse to a summary and back', async ($, on) => {
@@ -512,6 +512,94 @@ test('/thread toggle-band, view on, view off', async ($, on) => {
   expect(closed).toEqual(['thread-pane']) // already closed: nothing more to close
 })
 
+// A harness whose pane opens and closes for real, recording each ui.open and ui.close.
+const paneEvents = async ($: $T, on: OnT) => {
+  const events: string[] = []
+  let open = false
+  on('ui.open', () => {
+    events.push('open')
+    open = true
+    return { value: { isPlaced: true } } as never
+  })
+  on('ui.close', () => {
+    events.push('close')
+    open = false
+    return { value: {} } as never
+  })
+  await start($, on, () => ROWS, () => (open ? [{ id: 'thread-pane' }] : []))
+  return { events, run: async (args: string) => (await $.command.run({ command: 'thread', args, ...RUN })).text }
+}
+const selectedKey = async ($: $T) => {
+  const ui = await $.ui.mount(BAND)
+  const sel = (await ui.findAll({ type: 'Button' })).filter(b => b.props.variant === 'primary' && !['none', 'view'].includes(b.key!)).map(b => b.key)
+  await ui.unmount()
+  return sel
+}
+
+test('/thread with no arguments toggles the pane: opened, then closed', async ($, on) => {
+  const { events, run } = await paneEvents($, on)
+  expect(await run('')).toBe('Thread pane opened.')
+  expect(events).toEqual(['open'])
+  expect(await run('  ')).toBe('Thread pane closed.')
+  expect(events).toEqual(['open', 'close'])
+})
+
+test('/thread none clears the selection; close with no ids replies the usage with <ids|all>', async ($, on) => {
+  const { run } = await paneEvents($, on)
+  await run('b')
+  expect(await selectedKey($)).toEqual(['b']) // guard: something is selected
+  expect(await run('none')).toBe('Prompts go untagged.')
+  expect(await selectedKey($)).toEqual([])
+  expect(await run('close')).toBe('Usage: /thread close <ids|all>')
+})
+
+test('/thread subcommands are case-insensitive: LIST, VIEW ON, CLOSE ALL, TOGGLE-BAND', async ($, on) => {
+  const { events, run } = await paneEvents($, on)
+  expect((await run('LIST'))?.split('\n')).toHaveLength(3)
+  expect(await run('VIEW ON')).toBe('View shown.')
+  expect(events).toEqual(['open'])
+  expect(await run('TOGGLE-BAND')).toBe('Band hidden.')
+  expect(await run('CLOSE ALL')).toBe('Thread A closed. Thread B closed.')
+  expect(await run('NONE')).toBe('Prompts go untagged.')
+})
+
+test('/thread: whitespace between arguments never matters; new <message> keeps its inner spacing', async ($, on) => {
+  const filled: string[] = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true } as never
+  })
+  const { events, run } = await paneEvents($, on)
+  expect(await run('view  on')).toBe('View shown.')
+  expect(await run(' view \t off ')).toBe('View hidden.')
+  expect(events).toEqual(['open', 'close'])
+  expect(await run('  close   a   b ')).toBe('Thread A closed. Thread B closed.')
+  expect(await run('new   two  spaces   here ')).toBe('Thread D started: press Enter to send.')
+  expect(filled).toEqual(['[thread:d] two  spaces   here'])
+})
+
+test('/thread: a known subcommand with extra arguments replies its usage and changes nothing', async ($, on) => {
+  const { events, run } = await paneEvents($, on)
+  await run('b')
+  events.length = 0
+  const bad: [string, string][] = [
+    ['none x', 'Usage: /thread none'],
+    ['toggle-band x', 'Usage: /thread toggle-band'],
+    ['view x', 'Usage: /thread view on|off'],
+    ['view on x', 'Usage: /thread view on|off'],
+    ['view off x', 'Usage: /thread view on|off'],
+    ['list x', 'Usage: /thread list'],
+    ['close all x', 'Usage: /thread close <ids|all>'],
+  ]
+  for (const [args, usage] of bad) expect(await run(args)).toBe(usage)
+  expect(events).toEqual([]) // no pane opened or closed
+  expect(await selectedKey($)).toEqual(['b']) // none x did not clear it
+  const ui = await $.ui.mount(BAND)
+  expect(await ui.find({ key: 'b' })).toBeDefined() // toggle-band x did not hide the band
+  await ui.unmount()
+  expect((await run('list'))?.split('\n').map(l => l.endsWith('[closed]'))).toEqual([false, false, true]) // close all x closed nothing
+})
+
 test('pane: Close thread in the thread view only; it closes like /thread close and the pane returns to the list', async ($, on) => {
   const opened: (string | undefined)[] = []
   on('ui.open', (_, e) => {
@@ -692,7 +780,7 @@ test('dismiss: sends nothing, survives a re-register; new options reopen it', as
   })
   on('ui.notify', () => ({ value: {} }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
-  let rows: { role: string; text: string; toolUses: unknown[] }[] = [...ROWS]
+  let rows: { role: string; text: string; toolUses?: unknown[] }[] = [...ROWS]
   await start($, on, () => rows as never)
   const reload = () => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const cards = async () => {
